@@ -1,3 +1,5 @@
+use core::ops::{Add, Div, Mul, Sub};
+
 use esp_hal::{
     clock::Clocks,
     delay::Delay,
@@ -20,6 +22,68 @@ use esp_println::{dbg, println};
 
 const WIDTH: usize = 200;
 const HEIGHT: usize = 200;
+
+const SCREEN_RECT: Rect = Rect {
+    x: Span {
+        lo: 0,
+        hi: WIDTH as i16,
+    },
+    y: Span {
+        lo: 0,
+        hi: HEIGHT as i16,
+    },
+};
+
+pub struct Span {
+    pub lo: i16,
+    pub hi: i16,
+}
+
+impl Span {
+    /// Returns the size of the span, calculated as `hi - lo`.
+    pub fn size(&self) -> i16 {
+        self.hi - self.lo
+    }
+
+    /// Computes the intersection of two spans.
+    /// Returns `None` if there is no intersection, otherwise returns `Some(Span)`.
+    pub fn intersection(&self, other: &Span) -> Option<Span> {
+        let lo = self.lo.max(other.lo);
+        let hi = self.hi.min(other.hi);
+
+        if lo <= hi {
+            Some(Span { lo, hi })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Rect {
+    pub x: Span,
+    pub y: Span,
+}
+
+impl Rect {
+    // Returns the width of the rectangle, which is the size of the x-span.
+    pub fn width(&self) -> i16 {
+        self.x.size()
+    }
+
+    /// Returns the height of the rectangle, which is the size of the y-span.
+    pub fn height(&self) -> i16 {
+        self.y.size()
+    }
+
+    /// Computes the intersection of two rectangles.
+    /// Returns `None` if there is no intersection, otherwise returns `Some(Rect)`.
+    pub fn intersection(&self, other: &Rect) -> Option<Rect> {
+        let x = self.x.intersection(&other.x)?;
+        let y = self.y.intersection(&other.y)?;
+
+        Some(Rect { x, y })
+    }
+}
 
 pub struct Display<'d, Cs, Dc, Busy, Rst> {
     pub power_is_on: bool,
@@ -78,7 +142,7 @@ where
         if self.pulldown_rst_mode {
             drop(Output::new(&mut self.rst, Level::Low));
             self.delay.delay(10.millis());
-            
+
             drop(Input::new(&mut self.rst, Pull::Up));
             self.delay.delay(10.millis());
         } else {
@@ -99,17 +163,13 @@ where
     pub fn draw_image(
         &mut self,
         bitmap: &[u8],
-        x: i16,
-        y: i16,
-        w: i16,
-        h: i16,
+        rect: Rect,
         invert: bool,
         mirror_y: bool,
-        pgm: bool,
     ) -> Result<(), spi::Error> {
-        self.write_image(bitmap, x, y, w, h, invert, mirror_y, pgm)?;
-        self.refresh(x, y, w, h)?;
-        self.write_image_again(bitmap, x, y, w, h, invert, mirror_y, pgm)?;
+        self.write_image(bitmap, rect, invert, mirror_y)?;
+        self.refresh(rect)?;
+        self.write_image_again(bitmap, rect, invert, mirror_y)?;
 
         Ok(())
     }
@@ -117,30 +177,22 @@ where
     pub fn write_image(
         &mut self,
         bitmap: &[u8],
-        x: i16,
-        y: i16,
-        w: i16,
-        h: i16,
+        rect: Rect,
         invert: bool,
         mirror_y: bool,
-        pgm: bool,
     ) -> Result<(), spi::Error> {
-        self.write_image_inner(0x24, bitmap, x, y, w, h, invert, mirror_y, pgm)?;
+        self.write_image_inner(0x24, bitmap, rect, invert, mirror_y)?;
         Ok(())
     }
 
     pub fn write_image_again(
         &mut self,
         bitmap: &[u8],
-        x: i16,
-        y: i16,
-        w: i16,
-        h: i16,
+        rect: Rect,
         invert: bool,
         mirror_y: bool,
-        pgm: bool,
     ) -> Result<(), spi::Error> {
-        self.write_image_inner(0x24, bitmap, x, y, w, h, invert, mirror_y, pgm)?;
+        self.write_image_inner(0x24, bitmap, rect, invert, mirror_y)?;
         Ok(())
     }
 
@@ -148,13 +200,9 @@ where
         &mut self,
         command: u8,
         bitmap: &[u8],
-        mut x: i16,
-        y: i16,
-        mut w: i16,
-        h: i16,
+        rect: Rect,
         invert: bool,
         mirror_y: bool,
-        pgm: bool,
     ) -> Result<(), spi::Error> {
         if self.initial_write {
             self.write_screen_buffer(0xFF)?;
@@ -182,7 +230,7 @@ where
         if w1 <= 0 || h1 <= 0 {
             return Ok(());
         }
-        if (!self.using_partial_mode) {
+        if !self.using_partial_mode {
             self.init_part()?;
         }
         self.set_partial_ram_area(x1 as u16, y1 as u16, w1 as u16, h1 as u16)?;
@@ -237,7 +285,7 @@ where
 
         self.set_dark_border(false)?;
 
-        self.set_partial_ram_area(0, 0, WIDTH as u16, HEIGHT as u16)?;
+        self.set_partial_ram_area(SCREEN_RECT)?;
 
         Ok(())
     }
@@ -272,7 +320,7 @@ where
 
     fn refresh_all(&mut self, partial_update_mode: bool) -> Result<(), spi::Error> {
         if partial_update_mode {
-            self.refresh(0, 0, WIDTH as i16, HEIGHT as i16)?;
+            self.refresh(SCREEN_RECT)?;
         } else {
             if self.using_partial_mode {
                 self.init_full()?;
@@ -284,36 +332,25 @@ where
         Ok(())
     }
 
-    fn refresh(&mut self, x: i16, y: i16, w: i16, h: i16) -> Result<(), spi::Error> {
+    fn refresh(&mut self, rect: Rect) -> Result<(), spi::Error> {
         if self.initial_refresh {
             return self.refresh_all(false);
         }
-        let mut w1 = if x < 0 { w + x } else { w };
-        let mut h1 = if y < 0 { h + y } else { h };
-        let mut x1 = if x < 0 { 0 } else { x };
-        let y1 = if y < 0 { 0 } else { y };
-        w1 = if x1 + w1 < WIDTH as i16 {
-            w1
-        } else {
-            WIDTH as i16 - x1
-        };
-        h1 = if y1 + h1 < HEIGHT as i16 {
-            h1
-        } else {
-            HEIGHT as i16 - y1
-        };
-        if w1 <= 0 || h1 <= 0 {
+        let rect = rect.intersection(&SCREEN_RECT);
+        let Some(rect) = rect else {
             return Ok(());
-        }
-        w1 += x1 % 8;
-        if w1 % 8 > 0 {
-            w1 += 8 - w1 % 8;
-        }
-        x1 -= x1 % 8;
+        };
+        let rect = Rect {
+            x: Span {
+                lo: floor_multiple(rect.x.lo, 8),
+                hi: ceil_multiple(rect.x.hi, 8),
+            },
+            y: rect.y,
+        };
         if !self.using_partial_mode {
             self.init_part()?;
         }
-        self.set_partial_ram_area(x1 as u16, y1 as u16, w1 as u16, h1 as u16)?;
+        self.set_partial_ram_area(rect)?;
         self.update_part()?;
 
         Ok(())
@@ -341,24 +378,25 @@ where
         Ok(())
     }
 
-    fn set_partial_ram_area(&mut self, x: u16, y: u16, w: u16, h: u16) -> Result<(), spi::Error> {
+    fn set_partial_ram_area(&mut self, rect: Rect) -> Result<(), spi::Error> {
         self.start_transfer();
         self.transfer_command(0x11)?;
         self.spi.transfer(&mut [0x03])?;
         self.transfer_command(0x44)?;
         self.spi
-            .transfer(&mut [(x / 8) as u8, ((x + w - 1) / 8) as u8])?;
+            .transfer(&mut [(rect.x.lo / 8) as u8, (rect.x.size() / 8) as u8])?;
         self.transfer_command(0x45)?;
         self.spi.transfer(&mut [
-            (y % 256) as u8,
-            (y / 256) as u8,
-            ((y + h - 1) % 256) as u8,
-            ((y + h - 1) % 256) as u8,
+            (rect.y.lo % 256) as u8,
+            (rect.y.lo / 256) as u8,
+            (rect.y.size() % 256) as u8,
+            (rect.y.size() % 256) as u8,
         ])?;
         self.transfer_command(0x4e)?;
-        self.spi.transfer(&mut [(x / 8) as u8])?;
+        self.spi.transfer(&mut [(rect.x.lo / 8) as u8])?;
         self.transfer_command(0x4f)?;
-        self.spi.transfer(&mut [(y % 256) as u8, (y / 256) as u8])?;
+        self.spi
+            .write_bytes(&mut [(rect.y.lo % 256) as u8, (rect.y.lo / 256) as u8])?;
         self.end_transfer();
 
         Ok(())
@@ -433,6 +471,7 @@ where
             self.delay.delay(1.millis());
         }
     }
+
     fn transfer_command(&mut self, value: u8) -> Result<(), spi::Error> {
         self.dc.set_low();
         self.spi.transfer(&mut [value])?;
@@ -447,4 +486,12 @@ where
     fn end_transfer(&mut self) {
         self.cs.set_high();
     }
+}
+
+fn floor_multiple(n: i16, m: i16) -> i16 {
+    n - n % m
+}
+
+fn ceil_multiple(n: i16, m: i16) -> i16 {
+    n + if n % m > 0 { m - n % m } else { 0 }
 }

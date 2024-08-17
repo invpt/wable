@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use devices::display::Display;
+use devices::{display::{Display, Rect, Span}, vibration_motor::VibrationMotor};
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
@@ -45,7 +45,6 @@ static BUTTON: Mutex<RefCell<Option<Input<GpioPin<26>>>>> = Mutex::new(RefCell::
 
 #[entry]
 fn main() -> ! {
-    println!("Welcome!");
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
 
@@ -57,21 +56,14 @@ fn main() -> ! {
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     io.set_interrupt_handler(handler);
 
-    let spi = Spi::<'_, _, FullDuplexMode>::with_cs(
-        Spi::<'_, _, FullDuplexMode>::with_mosi(
-            Spi::<'_, _, FullDuplexMode>::with_sck(
-                Spi::new(
-                    peripherals.SPI2,
-                    HertzU32::Hz(20000000),
-                    SpiMode::Mode0,
-                    &clocks,
-                ),
-                io.pins.gpio18,
-            ),
-            io.pins.gpio23,
-        ),
-        unsafe { io.pins.gpio5.clone_unchecked() },
-    );
+    let spi = Spi::new(
+        peripherals.SPI2,
+        HertzU32::Hz(20000000),
+        SpiMode::Mode0,
+        &clocks,
+    )
+    .with_mosi(io.pins.gpio23)
+    .with_sck(io.pins.gpio18);
 
     let mut display = Display::new(
         rtc,
@@ -90,29 +82,27 @@ fn main() -> ! {
     display
         .draw_image(
             include_bytes!("../bg.bin"),
-            0,
-            0,
-            200,
-            200,
-            false,
+            Rect {
+                x: Span { lo: 0, hi: 200 },
+                y: Span { lo: 0, hi: 200 },
+            },
             false,
             false,
         )
         .unwrap();
 
-    let mut op = Output::new(io.pins.gpio13, Level::Low);
-
-    op.set_high();
+    let mut vibration_motor = VibrationMotor::new(io.pins.gpio13);
+    vibration_motor.set_vibrating(true);
     delay.delay(500.millis());
-    op.set_low();
+    vibration_motor.set_vibrating(false);
     delay.delay(500.millis());
 
     let mut ip = Input::new(io.pins.gpio26, Pull::Up);
 
     if ip.is_high() {
-        op.set_high();
+        vibration_motor.set_vibrating(true);
         delay.delay(500.millis());
-        op.set_low();
+        vibration_motor.set_vibrating(false);
     }
 
     critical_section::with(|cs| {
