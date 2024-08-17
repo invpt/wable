@@ -1,22 +1,22 @@
 #![no_std]
 #![no_main]
 
-use devices::display::Display;
+use devices::{
+    display::{Display, Rect, Span},
+    vibration_motor::VibrationMotor,
+};
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
-    gpio::{Event, Gpio9, GpioPin, Input, Io, Level, Output, Pull},
-    peripheral::Peripheral,
+    gpio::{Event, GpioPin, Input, Io, Pull},
     peripherals::Peripherals,
     prelude::*,
     rtc_cntl::Rtc,
-    spi::{master::Spi, FullDuplexMode, SpiMode},
+    spi::{master::Spi, SpiMode},
     system::SystemControl,
-    time::current_time,
-    timer::timg::TimerGroup,
 };
-use fugit::{HertzU32, Rate};
+use fugit::HertzU32;
 
 extern crate alloc;
 use core::{cell::RefCell, mem::MaybeUninit};
@@ -45,7 +45,6 @@ static BUTTON: Mutex<RefCell<Option<Input<GpioPin<26>>>>> = Mutex::new(RefCell::
 
 #[entry]
 fn main() -> ! {
-    println!("Welcome!");
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
 
@@ -57,21 +56,14 @@ fn main() -> ! {
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     io.set_interrupt_handler(handler);
 
-    let spi = Spi::<'_, _, FullDuplexMode>::with_cs(
-        Spi::<'_, _, FullDuplexMode>::with_mosi(
-            Spi::<'_, _, FullDuplexMode>::with_sck(
-                Spi::new(
-                    peripherals.SPI2,
-                    HertzU32::Hz(20000000),
-                    SpiMode::Mode0,
-                    &clocks,
-                ),
-                io.pins.gpio18,
-            ),
-            io.pins.gpio23,
-        ),
-        unsafe { io.pins.gpio5.clone_unchecked() },
-    );
+    let spi = Spi::new(
+        peripherals.SPI2,
+        HertzU32::Hz(20000000),
+        SpiMode::Mode0,
+        &clocks,
+    )
+    .with_mosi(io.pins.gpio23)
+    .with_sck(io.pins.gpio18);
 
     let mut display = Display::new(
         rtc,
@@ -83,36 +75,34 @@ fn main() -> ! {
         &clocks,
     );
 
-    display.init().unwrap();
+    display.reset().unwrap();
 
     display.clear_screen(0xFF).unwrap();
 
     display
         .draw_image(
             include_bytes!("../bg.bin"),
-            0,
-            0,
-            200,
-            200,
-            false,
-            false,
-            false,
+            Rect {
+                x: Span { lo: 0, hi: 200 },
+                y: Span { lo: 0, hi: 200 },
+            },
         )
         .unwrap();
 
-    let mut op = Output::new(io.pins.gpio13, Level::Low);
+    display.power_off().unwrap();
 
-    op.set_high();
+    let mut vibration_motor = VibrationMotor::new(io.pins.gpio13);
+    vibration_motor.set_vibrating(true);
     delay.delay(500.millis());
-    op.set_low();
+    vibration_motor.set_vibrating(false);
     delay.delay(500.millis());
 
     let mut ip = Input::new(io.pins.gpio26, Pull::Up);
 
     if ip.is_high() {
-        op.set_high();
+        vibration_motor.set_vibrating(true);
         delay.delay(500.millis());
-        op.set_low();
+        vibration_motor.set_vibrating(false);
     }
 
     critical_section::with(|cs| {
@@ -120,7 +110,8 @@ fn main() -> ! {
         BUTTON.borrow_ref_mut(cs).replace(ip)
     });
     esp_println::logger::init_logger_from_env();
-    /*init_heap();
+    init_heap();
+    /*
 
     let timer = esp_hal::timer::PeriodicTimer::new(
         esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None)

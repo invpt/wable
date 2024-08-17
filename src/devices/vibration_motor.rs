@@ -1,4 +1,7 @@
-use esp_hal::{gpio::{Level, Output, OutputPin}, peripheral::Peripheral};
+use esp_hal::{
+    gpio::{Level, Output, OutputPin},
+    peripheral::Peripheral,
+};
 
 pub struct VibrationMotor<'d, P> {
     vib_pwm: Output<'d, P>,
@@ -23,4 +26,3 @@ impl<'d, P: OutputPin> VibrationMotor<'d, P> {
         }
     }
 }
-
