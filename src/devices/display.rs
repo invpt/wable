@@ -1,5 +1,13 @@
 use esp_hal::{
-    delay::Delay, gpio::{GpioPin, Input, Level, Output, Pull, WakeEvent}, peripheral::Peripheral, peripherals::{SPI0, SPI1, SPI2, SPI3}, prelude::*, rtc_cntl::{sleep::GpioWakeupSource, Rtc}, spi::{self, master::Spi, FullDuplexMode}, time::current_time
+    clock::Clocks,
+    delay::Delay,
+    gpio::{Input, InputPin, Level, Output, OutputPin, Pull, WakeEvent},
+    peripheral::Peripheral,
+    peripherals::{SPI0, SPI1, SPI2, SPI3},
+    prelude::*,
+    rtc_cntl::{sleep::GpioWakeupSource, Rtc},
+    spi::{self, master::Spi, FullDuplexMode},
+    time::current_time,
 };
 use esp_println::{dbg, println};
 
@@ -13,7 +21,7 @@ use esp_println::{dbg, println};
 const WIDTH: usize = 200;
 const HEIGHT: usize = 200;
 
-pub struct Display<'d> {
+pub struct Display<'d, Cs, Dc, Busy, Rst> {
     pub power_is_on: bool,
     pub using_partial_mode: bool,
     pub initial_refresh: bool,
@@ -22,14 +30,44 @@ pub struct Display<'d> {
     pub delay: Delay,
     pub rtc: Rtc<'d>,
     pub spi: Spi<'d, SPI2, FullDuplexMode>,
-    pub cs: Output<'d, GpioPin<5>>,
-    pub dc: Output<'d, GpioPin<10>>,
-    pub busy: Input<'d, GpioPin<19>>,
-    pub rst: GpioPin<9>,
-    pub rst_in: Option<Input<'d, GpioPin<9>>>,
+    pub cs: Output<'d, Cs>,
+    pub dc: Output<'d, Dc>,
+    pub busy: Input<'d, Busy>,
+    pub rst: Rst,
 }
 
-impl<'d> Display<'d> {
+impl<'d, Cs, Dc, Busy, Rst> Display<'d, Cs, Dc, Busy, Rst>
+where
+    Cs: OutputPin + Peripheral<P = Cs>,
+    Dc: OutputPin + Peripheral<P = Dc>,
+    Busy: InputPin + Peripheral<P = Busy>,
+    Rst: OutputPin + InputPin + Peripheral<P = Rst>,
+{
+    pub fn new(
+        rtc: Rtc<'d>,
+        spi: Spi<'d, SPI2, FullDuplexMode>,
+        cs: Cs,
+        dc: Dc,
+        busy: Busy,
+        rst: Rst,
+        clocks: &Clocks,
+    ) -> Self {
+        Self {
+            power_is_on: false,
+            using_partial_mode: false,
+            initial_refresh: true,
+            initial_write: true,
+            pulldown_rst_mode: true,
+            delay: Delay::new(clocks),
+            rtc,
+            spi,
+            cs: Output::new(cs, Level::High),
+            dc: Output::new(dc, Level::High),
+            busy: Input::new(busy, Pull::None),
+            rst,
+        }
+    }
+
     pub fn init(&mut self) -> Result<(), spi::Error> {
         self.cs.set_high();
         self.reset()?;
@@ -38,11 +76,10 @@ impl<'d> Display<'d> {
 
     pub fn reset(&mut self) -> Result<(), spi::Error> {
         if self.pulldown_rst_mode {
-            let mut rst_out = Output::new(unsafe { self.rst.clone_unchecked() }, Level::Low);
-            rst_out.set_low();
+            drop(Output::new(&mut self.rst, Level::Low));
             self.delay.delay(10.millis());
-            drop(rst_out);
-            let mut rst_in = Input::new(unsafe { self.rst.clone_unchecked() }, Pull::Up);
+            
+            drop(Input::new(&mut self.rst, Pull::Up));
             self.delay.delay(10.millis());
         } else {
             todo!()
@@ -59,7 +96,17 @@ impl<'d> Display<'d> {
         Ok(())
     }
 
-    pub fn draw_image(&mut self, bitmap: &[u8], x: i16, y: i16, w: i16, h: i16, invert: bool, mirror_y: bool, pgm: bool) -> Result<(), spi::Error> {
+    pub fn draw_image(
+        &mut self,
+        bitmap: &[u8],
+        x: i16,
+        y: i16,
+        w: i16,
+        h: i16,
+        invert: bool,
+        mirror_y: bool,
+        pgm: bool,
+    ) -> Result<(), spi::Error> {
         self.write_image(bitmap, x, y, w, h, invert, mirror_y, pgm)?;
         self.refresh(x, y, w, h)?;
         self.write_image_again(bitmap, x, y, w, h, invert, mirror_y, pgm)?;
@@ -67,17 +114,48 @@ impl<'d> Display<'d> {
         Ok(())
     }
 
-    pub fn write_image(&mut self, bitmap: &[u8], x: i16, y: i16, w: i16, h: i16, invert: bool, mirror_y: bool, pgm: bool) -> Result<(), spi::Error> {
+    pub fn write_image(
+        &mut self,
+        bitmap: &[u8],
+        x: i16,
+        y: i16,
+        w: i16,
+        h: i16,
+        invert: bool,
+        mirror_y: bool,
+        pgm: bool,
+    ) -> Result<(), spi::Error> {
         self.write_image_inner(0x24, bitmap, x, y, w, h, invert, mirror_y, pgm)?;
         Ok(())
     }
 
-    pub fn write_image_again(&mut self, bitmap: &[u8], x: i16, y: i16, w: i16, h: i16, invert: bool, mirror_y: bool, pgm: bool) -> Result<(), spi::Error> {
+    pub fn write_image_again(
+        &mut self,
+        bitmap: &[u8],
+        x: i16,
+        y: i16,
+        w: i16,
+        h: i16,
+        invert: bool,
+        mirror_y: bool,
+        pgm: bool,
+    ) -> Result<(), spi::Error> {
         self.write_image_inner(0x24, bitmap, x, y, w, h, invert, mirror_y, pgm)?;
         Ok(())
     }
 
-    fn write_image_inner(&mut self, command: u8, bitmap: &[u8], mut x: i16, y: i16, mut w: i16, h: i16, invert: bool, mirror_y: bool, pgm: bool) -> Result<(), spi::Error> {
+    fn write_image_inner(
+        &mut self,
+        command: u8,
+        bitmap: &[u8],
+        mut x: i16,
+        y: i16,
+        mut w: i16,
+        h: i16,
+        invert: bool,
+        mirror_y: bool,
+        pgm: bool,
+    ) -> Result<(), spi::Error> {
         if self.initial_write {
             self.write_screen_buffer(0xFF)?;
         }
@@ -87,8 +165,16 @@ impl<'d> Display<'d> {
         w = wb * 8;
         let x1 = x.max(0);
         let y1 = y.max(0);
-        let mut w1 = if x + w < WIDTH as i16 { w } else { WIDTH as i16 - x };
-        let mut h1 = if y + h < HEIGHT as i16 { h } else { HEIGHT as i16 - y };
+        let mut w1 = if x + w < WIDTH as i16 {
+            w
+        } else {
+            WIDTH as i16 - x
+        };
+        let mut h1 = if y + h < HEIGHT as i16 {
+            h
+        } else {
+            HEIGHT as i16 - y
+        };
         let dx = x1 - x;
         let dy = y1 - y;
         w1 -= dx;
@@ -105,12 +191,16 @@ impl<'d> Display<'d> {
         for i in 0..h1 {
             for j in 0..w1 / 8 {
                 let mut data = 0u8;
-                let idx = if mirror_y { j + dx / 8 + ((h - 1 - (i + dy))) * wb } else { j + dx / 8 + (i + dy) * wb };
+                let idx = if mirror_y {
+                    j + dx / 8 + (h - 1 - (i + dy)) * wb
+                } else {
+                    j + dx / 8 + (i + dy) * wb
+                };
                 data = bitmap[idx as usize];
                 if invert {
                     data = !data;
                 }
-                self.spi.transfer(&mut[data])?;
+                self.spi.transfer(&mut [data])?;
             }
         }
         self.end_transfer();
@@ -315,7 +405,12 @@ impl<'d> Display<'d> {
                 break;
             }
             self.busy_callback();
-            println!("{debug} Back from sleep! {:?}ms", current_time().checked_duration_since(start).map(|v| v.to_millis()));
+            println!(
+                "{debug} Back from sleep! {:?}ms",
+                current_time()
+                    .checked_duration_since(start)
+                    .map(|v| v.to_millis())
+            );
             if self.busy.is_low() {
                 break;
             }
@@ -326,7 +421,7 @@ impl<'d> Display<'d> {
             }
             // wdt.feed() if wdt is enabled
         }
-        
+
         Ok(())
     }
 

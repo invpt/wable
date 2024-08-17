@@ -1,10 +1,20 @@
 #![no_std]
 #![no_main]
 
-use display::Display;
+use devices::display::Display;
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, delay::Delay, gpio::{Event, Gpio9, GpioPin, Input, Io, Level, Output, Pull}, peripheral::Peripheral, peripherals::Peripherals, prelude::*, rtc_cntl::Rtc, spi::{master::Spi, FullDuplexMode, SpiMode}, system::SystemControl, time::current_time, timer::timg::TimerGroup
+    clock::ClockControl,
+    delay::Delay,
+    gpio::{Event, Gpio9, GpioPin, Input, Io, Level, Output, Pull},
+    peripheral::Peripheral,
+    peripherals::Peripherals,
+    prelude::*,
+    rtc_cntl::Rtc,
+    spi::{master::Spi, FullDuplexMode, SpiMode},
+    system::SystemControl,
+    time::current_time,
+    timer::timg::TimerGroup,
 };
 use fugit::{HertzU32, Rate};
 
@@ -14,7 +24,10 @@ use core::{cell::RefCell, mem::MaybeUninit};
 use critical_section::Mutex;
 use esp_println::println;
 
-mod display;
+mod devices {
+    pub mod display;
+    pub mod vibration_motor;
+}
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -30,12 +43,6 @@ fn init_heap() {
 
 static BUTTON: Mutex<RefCell<Option<Input<GpioPin<26>>>>> = Mutex::new(RefCell::new(None));
 
-/*
-#define DISPLAY_CS 5
-#define DISPLAY_RES 9
-#define DISPLAY_DC 10
-#define DISPLAY_BUSY 19
-*/
 #[entry]
 fn main() -> ! {
     println!("Welcome!");
@@ -44,7 +51,7 @@ fn main() -> ! {
 
     let clocks = ClockControl::max(system.clock_control).freeze();
     let delay = Delay::new(&clocks);
-    
+
     let rtc = Rtc::new(peripherals.LPWR, Some(handler));
 
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
@@ -66,27 +73,32 @@ fn main() -> ! {
         unsafe { io.pins.gpio5.clone_unchecked() },
     );
 
-    let mut display = Display {
-        power_is_on: false,
-        using_partial_mode: false,
-        initial_refresh: true,
-        initial_write: true,
-        pulldown_rst_mode: true,
-        delay,
+    let mut display = Display::new(
         rtc,
         spi,
-        cs: Output::new(io.pins.gpio5, Level::High),
-        dc: Output::new(io.pins.gpio10, Level::High),
-        busy: Input::new(io.pins.gpio19, Pull::None),
-        rst: io.pins.gpio9,
-        rst_in: None,
-    };
+        io.pins.gpio5,
+        io.pins.gpio10,
+        io.pins.gpio19,
+        io.pins.gpio9,
+        &clocks,
+    );
 
     display.init().unwrap();
 
     display.clear_screen(0xFF).unwrap();
 
-    display.draw_image(include_bytes!("../bg.bin"), 0, 0, 200, 200, false, false, false).unwrap();
+    display
+        .draw_image(
+            include_bytes!("../bg.bin"),
+            0,
+            0,
+            200,
+            200,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
 
     let mut op = Output::new(io.pins.gpio13, Level::Low);
 
