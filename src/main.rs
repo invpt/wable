@@ -7,22 +7,16 @@ use devices::{
 };
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
-    delay::Delay,
-    gpio::{Event, GpioPin, Input, Io, Pull},
-    peripherals::Peripherals,
-    prelude::*,
-    rtc_cntl::Rtc,
-    spi::{master::Spi, SpiMode},
-    system::SystemControl,
+    clock::ClockControl, delay::Delay, gpio::{Event, GpioPin, Input, Io, Pull}, i2c::I2C, peripherals::Peripherals, prelude::*, rtc_cntl::Rtc, spi::{master::Spi, SpiMode}, system::SystemControl
 };
 use fugit::HertzU32;
+use pcf8563::DateTime;
 
 extern crate alloc;
 use core::{cell::RefCell, mem::MaybeUninit};
 
 use critical_section::Mutex;
-use esp_println::println;
+use esp_println::{dbg, println};
 
 mod devices {
     pub mod display;
@@ -91,6 +85,28 @@ fn main() -> ! {
 
     display.power_off().unwrap();
 
+    let i2c = I2C::new(
+        peripherals.I2C0,
+        io.pins.gpio21,
+        io.pins.gpio22,
+        HertzU32::Hz(32768),
+        &clocks,
+        None,
+    );
+
+    let mut rtc = pcf8563::PCF8563::new(i2c);
+
+    rtc.set_datetime(&DateTime {
+        year: 24,
+        month: 8,
+        weekday: 6,
+        day: 17,
+        hours: 8,
+        minutes: 10,
+        seconds: 0,
+    })
+    .unwrap();
+
     let mut vibration_motor = VibrationMotor::new(io.pins.gpio13);
     vibration_motor.set_vibrating(true);
     delay.delay(500.millis());
@@ -111,28 +127,11 @@ fn main() -> ! {
     });
     esp_println::logger::init_logger_from_env();
     init_heap();
-    /*
-
-    let timer = esp_hal::timer::PeriodicTimer::new(
-        esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None)
-            .timer0
-            .into(),
-    );
-    let init = esp_wifi::initialize(
-        esp_wifi::EspWifiInitFor::Ble,
-        timer,
-        esp_hal::rng::Rng::new(peripherals.RNG),
-        peripherals.RADIO_CLK,
-        &clocks,
-    )
-    .unwrap();
-
-    let ble_conn = esp_wifi::ble::controller::BleConnector::new(&init, peripherals.BT);*/
 
     delay.delay(500.millis());
 
     loop {
-        println!("FUCK");
+        dbg!(rtc.get_datetime().unwrap());
         delay.delay(500.millis());
     }
 }

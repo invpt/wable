@@ -634,6 +634,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pcf8563"
+version = "0.1.2"
+source = "git+https://github.com/invpt/pcf8563-rs?rev=efc4e55#efc4e55e569bac863626313a4046eb73b2ed5557"
+dependencies = [
+ "embedded-hal",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1035,6 +1043,7 @@ dependencies = [
  "fugit",
  "heapless",
  "log",
+ "pcf8563",
  "smoltcp",
 ]
 
