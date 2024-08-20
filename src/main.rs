@@ -2,13 +2,27 @@
 #![no_main]
 
 use devices::{
+    ble::{
+        Ble, CommandCompleteEvent, HciEvent, LeSetScanEnable, LeSetScanParameters,
+    },
     display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
 };
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, delay::Delay, gpio::{Event, GpioPin, Input, Io, Pull}, i2c::I2C, peripherals::Peripherals, prelude::*, rtc_cntl::Rtc, spi::{master::Spi, SpiMode}, system::SystemControl
+    clock::ClockControl,
+    delay::Delay,
+    gpio::{GpioPin, Input, Io},
+    i2c::I2C,
+    peripherals::Peripherals,
+    prelude::*,
+    rng::Rng,
+    rtc_cntl::Rtc,
+    spi::{master::Spi, SpiMode},
+    system::SystemControl,
+    timer::{timg::TimerGroup, PeriodicTimer},
 };
+use esp_wifi::{ble::controller::BleConnector, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
 
@@ -16,9 +30,10 @@ extern crate alloc;
 use core::{cell::RefCell, mem::MaybeUninit};
 
 use critical_section::Mutex;
-use esp_println::{dbg, println};
+use esp_println::println;
 
 mod devices {
+    pub mod ble;
     pub mod display;
     pub mod vibration_motor;
 }
@@ -113,6 +128,70 @@ fn main() -> ! {
     vibration_motor.set_vibrating(false);
     delay.delay(500.millis());
 
+    let timer = PeriodicTimer::new(
+        TimerGroup::new(peripherals.TIMG1, &clocks, None)
+            .timer0
+            .into(),
+    );
+    let init = esp_wifi::initialize(
+        EspWifiInitFor::Ble,
+        timer,
+        Rng::new(peripherals.RNG),
+        peripherals.RADIO_CLK,
+        &clocks,
+    )
+    .unwrap();
+
+    let ble_conn = BleConnector::new(&init, peripherals.BT);
+
+    let mut ble = Ble::new(ble_conn);
+
+    ble.issue(LeSetScanParameters {
+        le_scan_type: 0x00,
+        le_scan_interval: 0x0010,
+        le_scan_window: 0x0010,
+        own_address_type: 0x00,
+        scanning_filter_policy: 0x00,
+    })
+    .unwrap();
+
+    loop {
+        let Ok(event) =
+            CommandCompleteEvent::<LeSetScanParameters>::parse(ble.receive().unwrap())
+        else {
+            continue;
+        };
+
+        if !event.return_parameters.status.is_successful() {
+            panic!("Failed to set scan parameters")
+        }
+
+        break;
+    }
+
+    ble.issue(LeSetScanEnable {
+        le_scan_enable: 0x01,
+        filter_duplicates: 0x01,
+    })
+    .unwrap();
+
+    loop {
+        let Ok(event) =
+            CommandCompleteEvent::<LeSetScanEnable>::parse(ble.receive().unwrap())
+        else {
+            continue;
+        };
+
+        if !event.return_parameters.status.is_successful() {
+            panic!("Failed to set scan enable")
+        }
+
+        break;
+    }
+
+    loop {}
+    /*
+
     let mut ip = Input::new(io.pins.gpio26, Pull::Up);
 
     if ip.is_high() {
@@ -133,7 +212,7 @@ fn main() -> ! {
     loop {
         dbg!(rtc.get_datetime().unwrap());
         delay.delay(500.millis());
-    }
+    }*/
 }
 
 #[handler]
