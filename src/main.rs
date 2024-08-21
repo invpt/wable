@@ -3,7 +3,7 @@
 
 use devices::{
     ble::{
-        Ble, CommandCompleteEvent, HciEvent, LeSetScanEnable, LeSetScanParameters,
+        Ble, CommandComplete, HciEvent, LeAdvertisingReport, LeSetScanEnable, LeSetScanParameters,
     },
     display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
@@ -156,8 +156,8 @@ fn main() -> ! {
     .unwrap();
 
     loop {
-        let Ok(event) =
-            CommandCompleteEvent::<LeSetScanParameters>::parse(ble.receive().unwrap())
+        let Some(event) =
+            CommandComplete::<LeSetScanParameters>::match_parse(&ble.receive().unwrap()).unwrap()
         else {
             continue;
         };
@@ -176,8 +176,8 @@ fn main() -> ! {
     .unwrap();
 
     loop {
-        let Ok(event) =
-            CommandCompleteEvent::<LeSetScanEnable>::parse(ble.receive().unwrap())
+        let Some(event) =
+            CommandComplete::<LeSetScanEnable>::match_parse(&ble.receive().unwrap()).unwrap()
         else {
             continue;
         };
@@ -189,7 +189,17 @@ fn main() -> ! {
         break;
     }
 
-    loop {}
+    loop {
+        let Some(event) = LeAdvertisingReport::match_parse(&ble.receive().unwrap()).unwrap() else {
+            continue;
+        };
+
+        for item in event.items() {
+            let item = item.unwrap();
+
+            println!("{:?}", item);
+        }
+    }
     /*
 
     let mut ip = Input::new(io.pins.gpio26, Pull::Up);

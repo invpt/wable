@@ -6,34 +6,37 @@ mod command;
 mod event;
 
 pub use command::*;
+use esp_println::println;
 pub use event::*;
 
 pub struct Ble<H> {
     hci: H,
 }
 
+pub type RawParameters = BoundedBytes<255>;
+
 #[derive(Debug, Clone)]
-pub struct RawParameters {
+pub struct BoundedBytes<const N: usize> {
     len: u8,
-    data: [u8; 255],
+    data: [u8; N],
 }
 
-impl RawParameters {
-    pub fn new(data: &[u8]) -> RawParameters {
-        assert!(data.len() < 256, "data length cannot exceed 255");
+impl<const N: usize> BoundedBytes<N> {
+    pub fn new(data: &[u8]) -> BoundedBytes<N> {
+        assert!(data.len() < N, "data length cannot exceed {}", N - 1);
 
         let len = data.len() as u8;
-        let mut data_arr = [0; 255];
-        data_arr.copy_from_slice(data);
+        let mut data_arr = [0; N];
+        data_arr[..data.len()].copy_from_slice(data);
 
-        RawParameters {
+        BoundedBytes {
             len,
             data: data_arr,
         }
     }
 }
 
-impl Deref for RawParameters {
+impl<const N: usize> Deref for BoundedBytes<N> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -85,7 +88,7 @@ impl HciCommand for RawHciCommand {
 }
 
 pub trait HciEvent: Sized {
-    fn parse(raw: RawHciEvent) -> Result<Self, ParseError>;
+    fn match_parse(raw: &RawHciEvent) -> Result<Option<Self>, ParseError>;
 }
 
 #[derive(Debug, Clone)]
@@ -94,10 +97,8 @@ pub struct RawHciEvent {
     pub parameters: RawParameters,
 }
 
-pub enum ParseError {
-    WrongCode,
-    BadFormat,
-}
+#[derive(Debug)]
+pub struct ParseError;
 
 impl<E, H> Ble<H>
 where
@@ -124,10 +125,12 @@ where
         let mut header_buf = [0; 2];
         self.hci.read_exact(&mut header_buf)?;
         let [event_code, parameter_length] = header_buf;
+        println!("HA {event_code} {parameter_length}");
 
         let mut event_parameters_buf = [0; 255];
         let event_parameters = &mut event_parameters_buf[..parameter_length as usize];
         self.hci.read_exact(event_parameters)?;
+        println!("HO");
 
         Ok(RawHciEvent {
             code: EventCode(event_code),

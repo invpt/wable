@@ -37,7 +37,7 @@ pub struct StatusCodeReturnParameters {
 impl ReturnParameters for StatusCodeReturnParameters {
     fn parse(raw: RawParameters) -> Result<Self, ParseError> {
         let &[status] = &*raw else {
-            return Err(ParseError::BadFormat);
+            return Err(ParseError);
         };
 
         Ok(StatusCodeReturnParameters {
