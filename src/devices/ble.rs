@@ -1,16 +1,19 @@
 use core::{fmt::Debug, ops::Deref};
 
-use embedded_io::{Read, Write};
+use embedded_io::{Read, ReadExactError, Write};
+use esp_hal::delay::Delay;
+use esp_hal::prelude::*;
+use esp_println::println;
 
 mod command;
 mod event;
 
 pub use command::*;
-use esp_println::println;
 pub use event::*;
 
 pub struct Ble<H> {
     hci: H,
+    delay: Delay,
 }
 
 pub type RawParameters = BoundedBytes<255>;
@@ -105,8 +108,8 @@ where
     H: Read<Error = E> + Write<Error = E>,
     E: embedded_io::Error,
 {
-    pub fn new(hci: H) -> Self {
-        Self { hci }
+    pub fn new(hci: H, delay: Delay) -> Self {
+        Self { hci, delay }
     }
 
     pub fn issue(&mut self, command: impl HciCommand) -> Result<(), BleError<E>> {
@@ -122,6 +125,20 @@ where
     }
 
     pub fn receive(&mut self) -> Result<RawHciEvent, BleError<E>> {
+        let mut packet_type_buf = [0; 1];
+        loop {
+            match self.hci.read_exact(&mut packet_type_buf) {
+                Ok(()) => break,
+                Err(ReadExactError::UnexpectedEof) => {
+                    self.delay.delay(10.millis());
+                    continue
+                },
+                Err(ReadExactError::Other(e)) => return Err(BleError::Io(e)),
+            }
+        }
+        let packet_type = packet_type_buf[0];
+        assert_eq!(packet_type, 4);
+
         let mut header_buf = [0; 2];
         self.hci.read_exact(&mut header_buf)?;
         let [event_code, parameter_length] = header_buf;

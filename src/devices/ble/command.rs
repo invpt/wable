@@ -2,14 +2,19 @@ use super::{RawParameters, ParseError, ReturnParameters};
 
 mod le_set_scan_enable;
 mod le_set_scan_parameters;
+mod reset;
+mod set_event_mask;
 
 pub use le_set_scan_enable::*;
 pub use le_set_scan_parameters::*;
+pub use reset::*;
+pub use set_event_mask::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ogf(pub u8);
 
 impl Ogf {
+    pub const CONTROLLER_BASEBAND: Ogf = Ogf(0x03);
     pub const LE_CONTROLLER: Ogf = Ogf(0x08);
 }
 
@@ -22,6 +27,7 @@ impl Opcode {
     }
 }
 
+#[derive(Debug)]
 pub struct StatusCode(pub u8);
 
 impl StatusCode {
@@ -30,6 +36,7 @@ impl StatusCode {
     }
 }
 
+#[derive(Debug)]
 pub struct StatusCodeReturnParameters {
     pub status: StatusCode,
 }

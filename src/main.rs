@@ -3,7 +3,7 @@
 
 use devices::{
     ble::{
-        Ble, CommandComplete, HciEvent, LeAdvertisingReport, LeSetScanEnable, LeSetScanParameters,
+        Ble, CommandComplete, HciEvent, LeAdvertisingReport, LeSetScanEnable, LeSetScanParameters, Reset, SetEventMask,
     },
     display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
@@ -74,7 +74,7 @@ fn main() -> ! {
     .with_mosi(io.pins.gpio23)
     .with_sck(io.pins.gpio18);
 
-    let mut display = Display::new(
+    /*let mut display = Display::new(
         rtc,
         spi,
         io.pins.gpio5,
@@ -98,7 +98,7 @@ fn main() -> ! {
         )
         .unwrap();
 
-    display.power_off().unwrap();
+    display.power_off().unwrap();*/
 
     let i2c = I2C::new(
         peripherals.I2C0,
@@ -144,11 +144,39 @@ fn main() -> ! {
 
     let ble_conn = BleConnector::new(&init, peripherals.BT);
 
-    let mut ble = Ble::new(ble_conn);
+    let mut ble = Ble::new(ble_conn, delay);
+
+    ble.issue(Reset {}).unwrap();
+
+    loop {
+        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.receive().unwrap()).unwrap() else {
+            continue;
+        };
+
+        if !event.return_parameters.status.is_successful() {
+            panic!("Failed to reset")
+        }
+
+        break;
+    }
+
+    ble.issue(SetEventMask { mask: !0 }).unwrap();
+
+    loop {
+        let Some(event) = CommandComplete::<SetEventMask>::match_parse(&ble.receive().unwrap()).unwrap() else {
+            continue;
+        };
+
+        if !event.return_parameters.status.is_successful() {
+            panic!("Failed to reset")
+        }
+
+        break;
+    }
 
     ble.issue(LeSetScanParameters {
-        le_scan_type: 0x00,
-        le_scan_interval: 0x0010,
+        le_scan_type: 0x01,
+        le_scan_interval: 0x0100,
         le_scan_window: 0x0010,
         own_address_type: 0x00,
         scanning_filter_policy: 0x00,
@@ -162,6 +190,8 @@ fn main() -> ! {
             continue;
         };
 
+        println!("{event:?}");
+
         if !event.return_parameters.status.is_successful() {
             panic!("Failed to set scan parameters")
         }
@@ -171,7 +201,7 @@ fn main() -> ! {
 
     ble.issue(LeSetScanEnable {
         le_scan_enable: 0x01,
-        filter_duplicates: 0x01,
+        filter_duplicates: 0x00,
     })
     .unwrap();
 
@@ -181,6 +211,8 @@ fn main() -> ! {
         else {
             continue;
         };
+
+        println!("{event:?}");
 
         if !event.return_parameters.status.is_successful() {
             panic!("Failed to set scan enable")
@@ -193,6 +225,8 @@ fn main() -> ! {
         let Some(event) = LeAdvertisingReport::match_parse(&ble.receive().unwrap()).unwrap() else {
             continue;
         };
+
+        println!("got event");
 
         for item in event.items() {
             let item = item.unwrap();

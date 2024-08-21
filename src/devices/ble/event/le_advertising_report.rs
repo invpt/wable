@@ -42,7 +42,7 @@ pub struct LeAdvertisingReportItem {
     pub event_type: u8,
     pub address_type: u8,
     pub address: [u8; 6],
-    pub data: BoundedBytes<0x1F>,
+    pub data: BoundedBytes<50>,
     pub rssi: u8,
 }
 

@@ -2,6 +2,9 @@ use crate::devices::ble::{CompleteCommand, HciCommand, Ogf, Opcode, RawHciComman
 
 use super::StatusCodeReturnParameters;
 
+const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000C);
+
+#[derive(Debug)]
 pub struct LeSetScanEnable {
     pub le_scan_enable: u8,
     pub filter_duplicates: u8,
@@ -9,8 +12,6 @@ pub struct LeSetScanEnable {
 
 impl HciCommand for LeSetScanEnable {
     fn raw(self) -> RawHciCommand {
-        const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000C);
-
         RawHciCommand {
             opcode: OPCODE,
             parameters: RawParameters::new(&[
@@ -23,4 +24,8 @@ impl HciCommand for LeSetScanEnable {
 
 impl CompleteCommand for LeSetScanEnable {
     type ReturnParameters = StatusCodeReturnParameters;
+
+    fn match_opcode(opcode: Opcode) -> bool {
+        opcode == OPCODE
+    }
 }
