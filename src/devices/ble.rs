@@ -12,6 +12,9 @@ pub use command::*;
 pub use event::*;
 
 pub struct Ble<H> {
+    /// The most recent num_hci_command_packets value received from the controller, decremented
+    /// whenever a command is sent. If this field is 0, no commands can be sent.
+    num_hci_command_packets: usize,
     hci: H,
     delay: Delay,
 }
@@ -49,6 +52,7 @@ impl<const N: usize> Deref for BoundedBytes<N> {
 
 #[derive(Debug)]
 pub enum BleError<E> {
+    WouldBlock,
     UnexpectedEof,
     Io(E),
 }
@@ -103,16 +107,27 @@ pub struct RawHciEvent {
 #[derive(Debug)]
 pub struct ParseError;
 
+#[derive(Debug)]
+pub struct QSlot(());
+
 impl<E, H> Ble<H>
 where
     H: Read<Error = E> + Write<Error = E>,
     E: embedded_io::Error,
 {
-    pub fn new(hci: H, delay: Delay) -> Self {
-        Self { hci, delay }
+    pub fn new(hci: H, delay: Delay) -> (Self, QSlot) {
+        (Self { num_hci_command_packets: 0, hci, delay }, QSlot(()))
     }
 
-    pub fn issue(&mut self, command: impl HciCommand) -> Result<(), BleError<E>> {
+    pub fn queue(&mut self, qslot: QSlot, command: impl HciCommand) -> Result<(), BleError<E>> {
+        self.try_issue(command)
+    }
+
+    pub fn try_issue(&mut self, command: impl HciCommand) -> Result<(), BleError<E>> {
+        if self.num_hci_command_packets == 0 {
+            return Err(BleError::WouldBlock)
+        }
+
         let raw = command.raw();
 
         self.hci.write_all(&[0x01])?;
@@ -125,6 +140,10 @@ where
     }
 
     pub fn receive(&mut self) -> Result<RawHciEvent, BleError<E>> {
+        self.try_receive()
+    }
+
+    pub fn try_receive(&mut self) -> Result<RawHciEvent, BleError<E>> {
         let mut packet_type_buf = [0; 1];
         loop {
             match self.hci.read_exact(&mut packet_type_buf) {

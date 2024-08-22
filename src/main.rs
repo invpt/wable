@@ -144,11 +144,10 @@ fn main() -> ! {
 
     let ble_conn = BleConnector::new(&init, peripherals.BT);
 
-    let mut ble = Ble::new(ble_conn, delay);
+    let (mut ble, qslot) = Ble::new(ble_conn, delay);
 
-    ble.issue(Reset {}).unwrap();
-
-    loop {
+    ble.queue(qslot, Reset {}).unwrap();
+    let qslot = loop {
         let Some(event) = CommandComplete::<Reset>::match_parse(&ble.receive().unwrap()).unwrap() else {
             continue;
         };
@@ -157,12 +156,11 @@ fn main() -> ! {
             panic!("Failed to reset")
         }
 
-        break;
-    }
+        break event.qslot;
+    };
 
-    ble.issue(SetEventMask { mask: !0 }).unwrap();
-
-    loop {
+    ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
+    let qslot = loop {
         let Some(event) = CommandComplete::<SetEventMask>::match_parse(&ble.receive().unwrap()).unwrap() else {
             continue;
         };
@@ -171,10 +169,10 @@ fn main() -> ! {
             panic!("Failed to reset")
         }
 
-        break;
-    }
+        break event.qslot;
+    };
 
-    ble.issue(LeSetScanParameters {
+    ble.queue(qslot, LeSetScanParameters {
         le_scan_type: 0x01,
         le_scan_interval: 0x0100,
         le_scan_window: 0x0010,
@@ -182,8 +180,7 @@ fn main() -> ! {
         scanning_filter_policy: 0x00,
     })
     .unwrap();
-
-    loop {
+    let qslot = loop {
         let Some(event) =
             CommandComplete::<LeSetScanParameters>::match_parse(&ble.receive().unwrap()).unwrap()
         else {
@@ -196,16 +193,15 @@ fn main() -> ! {
             panic!("Failed to set scan parameters")
         }
 
-        break;
-    }
+        break event.qslot;
+    };
 
-    ble.issue(LeSetScanEnable {
+    ble.queue(qslot, LeSetScanEnable {
         le_scan_enable: 0x01,
         filter_duplicates: 0x00,
     })
     .unwrap();
-
-    loop {
+    let _qslot = loop {
         let Some(event) =
             CommandComplete::<LeSetScanEnable>::match_parse(&ble.receive().unwrap()).unwrap()
         else {
@@ -218,8 +214,8 @@ fn main() -> ! {
             panic!("Failed to set scan enable")
         }
 
-        break;
-    }
+        break event.qslot;
+    };
 
     loop {
         let Some(event) = LeAdvertisingReport::match_parse(&ble.receive().unwrap()).unwrap() else {

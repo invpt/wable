@@ -1,4 +1,4 @@
-use crate::devices::ble::{EventCode, HciEvent, Opcode, ParseError, RawHciEvent, RawParameters};
+use crate::devices::ble::{EventCode, HciEvent, Opcode, ParseError, QSlot, RawHciEvent, RawParameters};
 
 pub trait CompleteCommand {
     type ReturnParameters: ReturnParameters;
@@ -15,6 +15,7 @@ pub struct CommandComplete<C: CompleteCommand> {
     pub num_hci_command_packets: u8,
     pub command_opcode: Opcode,
     pub return_parameters: C::ReturnParameters,
+    pub qslot: QSlot,
 }
 
 impl<C, R> HciEvent for CommandComplete<C>
@@ -43,6 +44,7 @@ where
             num_hci_command_packets: *num_hci_command_packets,
             command_opcode,
             return_parameters: C::ReturnParameters::parse(RawParameters::new(parameters))?,
+            qslot: QSlot(()),
         }))
     }
 }
