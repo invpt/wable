@@ -1,15 +1,14 @@
 use core::{fmt::Debug, ops::Deref};
 
+use command::HciCommand;
 use embedded_io::{Read, ReadExactError, Write};
 use esp_hal::delay::Delay;
 use esp_hal::prelude::*;
 use esp_println::println;
+use event::{EventCode, RawHciEvent};
 
-mod command;
-mod event;
-
-pub use command::*;
-pub use event::*;
+pub mod command;
+pub mod event;
 
 pub struct Ble<H> {
     /// The most recent num_hci_command_packets value received from the controller, decremented
@@ -78,48 +77,22 @@ where
     }
 }
 
-pub trait HciCommand {
-    fn raw(self) -> RawHciCommand;
-}
-
-#[derive(Debug, Clone)]
-pub struct RawHciCommand {
-    pub opcode: Opcode,
-    pub parameters: RawParameters,
-}
-
-impl HciCommand for RawHciCommand {
-    fn raw(self) -> RawHciCommand {
-        self
-    }
-}
-
-pub trait HciEvent: Sized {
-    fn match_parse(raw: &RawHciEvent) -> Result<Option<Self>, ParseError>;
-}
-
-#[derive(Debug, Clone)]
-pub struct RawHciEvent {
-    pub code: EventCode,
-    pub parameters: RawParameters,
-}
-
 #[derive(Debug)]
 pub struct ParseError;
 
 #[derive(Debug)]
-pub struct QSlot(());
+pub struct QueueSlot(());
 
 impl<E, H> Ble<H>
 where
     H: Read<Error = E> + Write<Error = E>,
     E: embedded_io::Error,
 {
-    pub fn new(hci: H, delay: Delay) -> (Self, QSlot) {
-        (Self { num_hci_command_packets: 0, hci, delay }, QSlot(()))
+    pub fn new(hci: H, delay: Delay) -> (Self, QueueSlot) {
+        (Self { num_hci_command_packets: 1, hci, delay }, QueueSlot(()))
     }
 
-    pub fn queue(&mut self, qslot: QSlot, command: impl HciCommand) -> Result<(), BleError<E>> {
+    pub fn queue(&mut self, _qslot: QueueSlot, command: impl HciCommand) -> Result<(), BleError<E>> {
         self.try_issue(command)
     }
 

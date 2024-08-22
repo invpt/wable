@@ -3,7 +3,14 @@
 
 use devices::{
     ble::{
-        Ble, CommandComplete, HciEvent, LeAdvertisingReport, LeSetScanEnable, LeSetScanParameters, Reset, SetEventMask,
+        command::{
+            le_set_scan_enable::LeSetScanEnable, le_set_scan_parameters::LeSetScanParameters,
+            reset::Reset, set_event_mask::SetEventMask,
+        },
+        event::{
+            command_complete::CommandComplete, le_advertising_report::LeAdvertisingReport, HciEvent,
+        },
+        Ble,
     },
     display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
@@ -148,7 +155,8 @@ fn main() -> ! {
 
     ble.queue(qslot, Reset {}).unwrap();
     let qslot = loop {
-        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.receive().unwrap()).unwrap() else {
+        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.receive().unwrap()).unwrap()
+        else {
             continue;
         };
 
@@ -161,7 +169,9 @@ fn main() -> ! {
 
     ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
     let qslot = loop {
-        let Some(event) = CommandComplete::<SetEventMask>::match_parse(&ble.receive().unwrap()).unwrap() else {
+        let Some(event) =
+            CommandComplete::<SetEventMask>::match_parse(&ble.receive().unwrap()).unwrap()
+        else {
             continue;
         };
 
@@ -172,13 +182,16 @@ fn main() -> ! {
         break event.qslot;
     };
 
-    ble.queue(qslot, LeSetScanParameters {
-        le_scan_type: 0x01,
-        le_scan_interval: 0x0100,
-        le_scan_window: 0x0010,
-        own_address_type: 0x00,
-        scanning_filter_policy: 0x00,
-    })
+    ble.queue(
+        qslot,
+        LeSetScanParameters {
+            le_scan_type: 0x01,
+            le_scan_interval: 0x0100,
+            le_scan_window: 0x0010,
+            own_address_type: 0x00,
+            scanning_filter_policy: 0x00,
+        },
+    )
     .unwrap();
     let qslot = loop {
         let Some(event) =
@@ -196,10 +209,13 @@ fn main() -> ! {
         break event.qslot;
     };
 
-    ble.queue(qslot, LeSetScanEnable {
-        le_scan_enable: 0x01,
-        filter_duplicates: 0x00,
-    })
+    ble.queue(
+        qslot,
+        LeSetScanEnable {
+            le_scan_enable: 0x01,
+            filter_duplicates: 0x00,
+        },
+    )
     .unwrap();
     let _qslot = loop {
         let Some(event) =

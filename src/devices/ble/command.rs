@@ -1,14 +1,9 @@
-use super::{RawParameters, ParseError, ReturnParameters};
+use super::{event::command_complete::ReturnParameters, ParseError, RawParameters};
 
-mod le_set_scan_enable;
-mod le_set_scan_parameters;
-mod reset;
-mod set_event_mask;
-
-pub use le_set_scan_enable::*;
-pub use le_set_scan_parameters::*;
-pub use reset::*;
-pub use set_event_mask::*;
+pub mod le_set_scan_enable;
+pub mod le_set_scan_parameters;
+pub mod reset;
+pub mod set_event_mask;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ogf(pub u8);
@@ -24,6 +19,27 @@ pub struct Opcode(pub u16);
 impl Opcode {
     pub const fn new(ogf: Ogf, ocf: u16) -> Opcode {
         Opcode(((ogf.0 as u16) << 10) | ocf)
+    }
+}
+
+pub trait HciCommand {
+    fn match_opcode(opcode: Opcode) -> bool;
+    fn raw(self) -> RawHciCommand;
+}
+
+#[derive(Debug, Clone)]
+pub struct RawHciCommand {
+    pub opcode: Opcode,
+    pub parameters: RawParameters,
+}
+
+impl HciCommand for RawHciCommand {
+    fn match_opcode(_opcode: Opcode) -> bool {
+        true
+    }
+
+    fn raw(self) -> RawHciCommand {
+        self
     }
 }
 

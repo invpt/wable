@@ -1,6 +1,6 @@
-use crate::devices::ble::{BoundedBytes, HciEvent, ParseError, RawHciEvent, RawParameters};
+use crate::devices::ble::{BoundedBytes, ParseError, RawHciEvent};
 
-use super::EventCode;
+use super::{EventCode, HciEvent};
 
 pub struct LeAdvertisingReport {
     num_reports: u8,

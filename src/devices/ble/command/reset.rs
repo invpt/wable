@@ -1,6 +1,6 @@
-use crate::devices::ble::{BoundedBytes, CompleteCommand, HciCommand, RawHciCommand};
+use crate::devices::ble::{event::command_complete::CommandWithCompleteEvent, BoundedBytes, HciCommand};
 
-use super::{Ogf, Opcode, StatusCodeReturnParameters};
+use super::{Ogf, Opcode, RawHciCommand, StatusCodeReturnParameters};
 
 const OPCODE: Opcode = Opcode::new(Ogf::CONTROLLER_BASEBAND, 0x0003);
 
@@ -8,7 +8,11 @@ pub struct Reset {
 }
 
 impl HciCommand for Reset {
-    fn raw(self) -> crate::devices::ble::RawHciCommand {
+    fn match_opcode(opcode: Opcode) -> bool {
+        opcode == OPCODE
+    }
+
+    fn raw(self) -> RawHciCommand {
         RawHciCommand {
             opcode: OPCODE,
             parameters: BoundedBytes::new(&[]),
@@ -16,10 +20,6 @@ impl HciCommand for Reset {
     }
 }
 
-impl CompleteCommand for Reset {
+impl CommandWithCompleteEvent for Reset {
     type ReturnParameters = StatusCodeReturnParameters;
-
-    fn match_opcode(opcode: Opcode) -> bool {
-        opcode == OPCODE
-    }
 }

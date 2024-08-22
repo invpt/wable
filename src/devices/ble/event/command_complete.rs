@@ -1,9 +1,9 @@
-use crate::devices::ble::{EventCode, HciEvent, Opcode, ParseError, QSlot, RawHciEvent, RawParameters};
+use crate::devices::ble::{command::Opcode, EventCode, HciCommand, ParseError, QueueSlot, RawHciEvent, RawParameters};
 
-pub trait CompleteCommand {
+use super::HciEvent;
+
+pub trait CommandWithCompleteEvent: HciCommand {
     type ReturnParameters: ReturnParameters;
-
-    fn match_opcode(opcode: Opcode) -> bool;
 }
 
 pub trait ReturnParameters: Sized {
@@ -11,16 +11,16 @@ pub trait ReturnParameters: Sized {
 }
 
 #[derive(Debug)]
-pub struct CommandComplete<C: CompleteCommand> {
+pub struct CommandComplete<C: CommandWithCompleteEvent> {
     pub num_hci_command_packets: u8,
     pub command_opcode: Opcode,
     pub return_parameters: C::ReturnParameters,
-    pub qslot: QSlot,
+    pub qslot: QueueSlot,
 }
 
 impl<C, R> HciEvent for CommandComplete<C>
 where
-    C: CompleteCommand<ReturnParameters = R>,
+    C: CommandWithCompleteEvent<ReturnParameters = R>,
     R: ReturnParameters,
 {
     fn match_parse(raw: &RawHciEvent) -> Result<Option<Self>, ParseError> {
@@ -44,7 +44,7 @@ where
             num_hci_command_packets: *num_hci_command_packets,
             command_opcode,
             return_parameters: C::ReturnParameters::parse(RawParameters::new(parameters))?,
-            qslot: QSlot(()),
+            qslot: QueueSlot(()),
         }))
     }
 }

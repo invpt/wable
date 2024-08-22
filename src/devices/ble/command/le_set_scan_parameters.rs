@@ -1,6 +1,6 @@
-use crate::devices::ble::{CompleteCommand, HciCommand, Ogf, Opcode, RawHciCommand, RawParameters};
+use crate::devices::ble::{event::command_complete::CommandWithCompleteEvent, HciCommand, RawParameters};
 
-use super::StatusCodeReturnParameters;
+use super::{Ogf, Opcode, RawHciCommand, StatusCodeReturnParameters};
 
 const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000B);
 
@@ -14,6 +14,10 @@ pub struct LeSetScanParameters {
 }
 
 impl HciCommand for LeSetScanParameters {
+    fn match_opcode(opcode: Opcode) -> bool {
+        opcode == OPCODE
+    }
+
     fn raw(self) -> RawHciCommand {
         let le_scan_interval = self.le_scan_interval.to_le_bytes();
         let le_scan_window = self.le_scan_window.to_le_bytes();
@@ -33,10 +37,6 @@ impl HciCommand for LeSetScanParameters {
     }
 }
 
-impl CompleteCommand for LeSetScanParameters {
+impl CommandWithCompleteEvent for LeSetScanParameters {
     type ReturnParameters = StatusCodeReturnParameters;
-
-    fn match_opcode(opcode: Opcode) -> bool {
-        opcode == OPCODE
-    }
 }
