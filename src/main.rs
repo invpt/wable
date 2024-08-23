@@ -2,37 +2,46 @@
 #![no_main]
 
 use devices::{
+    ble::{
+        command::{
+            le_set_scan_enable::LeSetScanEnable, le_set_scan_parameters::LeSetScanParameters,
+            reset::Reset, set_event_mask::SetEventMask,
+        },
+        event::{
+            command_complete::CommandComplete, le_advertising_report::LeAdvertisingReport, HciEvent,
+        },
+        Ble,
+    },
     display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
 };
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, delay::Delay, gpio::{Event, GpioPin, Input, Io, Pull}, i2c::I2C, peripherals::Peripherals, prelude::*, rtc_cntl::Rtc, spi::{master::Spi, SpiMode}, system::SystemControl
+    clock::ClockControl,
+    delay::Delay,
+    gpio::{GpioPin, Input, Io},
+    i2c::I2C,
+    peripherals::Peripherals,
+    prelude::*,
+    rng::Rng,
+    rtc_cntl::Rtc,
+    spi::{master::Spi, SpiMode},
+    system::SystemControl,
+    timer::{timg::TimerGroup, PeriodicTimer},
 };
+use esp_wifi::{ble::controller::BleConnector, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
 
-extern crate alloc;
-use core::{cell::RefCell, mem::MaybeUninit};
+use core::cell::RefCell;
 
 use critical_section::Mutex;
-use esp_println::{dbg, println};
+use esp_println::println;
 
 mod devices {
+    pub mod ble;
     pub mod display;
     pub mod vibration_motor;
-}
-
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
-
-fn init_heap() {
-    const HEAP_SIZE: usize = 32 * 1024;
-    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
-
-    unsafe {
-        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
-    }
 }
 
 static BUTTON: Mutex<RefCell<Option<Input<GpioPin<26>>>>> = Mutex::new(RefCell::new(None));
@@ -113,6 +122,110 @@ fn main() -> ! {
     vibration_motor.set_vibrating(false);
     delay.delay(500.millis());
 
+    let timer = PeriodicTimer::new(
+        TimerGroup::new(peripherals.TIMG1, &clocks, None)
+            .timer0
+            .into(),
+    );
+    let init = esp_wifi::initialize(
+        EspWifiInitFor::Ble,
+        timer,
+        Rng::new(peripherals.RNG),
+        peripherals.RADIO_CLK,
+        &clocks,
+    )
+    .unwrap();
+
+    let ble_conn = BleConnector::new(&init, peripherals.BT);
+
+    let (mut ble, qslot) = Ble::new(ble_conn, delay);
+
+    let qlock = ble.queue(qslot, Reset {}).unwrap();
+    let qslot = loop {
+        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.poll().unwrap()).unwrap()
+        else {
+            continue;
+        };
+
+        event.return_parameters.status.assert().unwrap();
+
+        break qlock.release_with(&event);
+    };
+
+    let qlock = ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
+    let qslot = loop {
+        let Some(event) =
+            CommandComplete::<SetEventMask>::match_parse(&ble.poll().unwrap()).unwrap()
+        else {
+            continue;
+        };
+
+        event.return_parameters.status.assert().unwrap();
+
+        break qlock.release_with(&event);
+    };
+
+    let qlock = ble
+        .queue(
+            qslot,
+            LeSetScanParameters {
+                le_scan_type: 0x01,
+                le_scan_interval: 0x0100,
+                le_scan_window: 0x0010,
+                own_address_type: 0x00,
+                scanning_filter_policy: 0x00,
+            },
+        )
+        .unwrap();
+    let qslot = loop {
+        let Some(event) =
+            CommandComplete::<LeSetScanParameters>::match_parse(&ble.poll().unwrap()).unwrap()
+        else {
+            continue;
+        };
+
+        event.return_parameters.status.assert().unwrap();
+
+        break qlock.release_with(&event);
+    };
+
+    let qlock = ble
+        .queue(
+            qslot,
+            LeSetScanEnable {
+                le_scan_enable: 0x01,
+                filter_duplicates: 0x00,
+            },
+        )
+        .unwrap();
+    let _qslot = loop {
+        let Some(event) =
+            CommandComplete::<LeSetScanEnable>::match_parse(&ble.poll().unwrap()).unwrap()
+        else {
+            continue;
+        };
+
+        event.return_parameters.status.assert().unwrap();
+
+        break qlock.release_with(&event);
+    };
+
+    loop {
+        let Some(event) = LeAdvertisingReport::match_parse(&ble.poll().unwrap()).unwrap() else {
+            continue;
+        };
+
+        let time = rtc.get_datetime().unwrap();
+
+        println!("received report at {time:?}");
+        for item in event.items() {
+            let item = item.unwrap();
+
+            println!("{:?}", item);
+        }
+    }
+    /*
+
     let mut ip = Input::new(io.pins.gpio26, Pull::Up);
 
     if ip.is_high() {
@@ -133,7 +246,7 @@ fn main() -> ! {
     loop {
         dbg!(rtc.get_datetime().unwrap());
         delay.delay(500.millis());
-    }
+    }*/
 }
 
 #[handler]
