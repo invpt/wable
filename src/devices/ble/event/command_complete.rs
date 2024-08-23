@@ -1,4 +1,4 @@
-use crate::devices::ble::{command::Opcode, EventCode, HciCommand, ParseError, QueueSlot, RawHciEvent, RawParameters};
+use crate::devices::ble::{command::{AnyCommand, Opcode}, private::CommandReceiptIndicator, EventCode, HciCommand, ParseError, QueueSlot, RawHciEvent, RawParameters};
 
 use super::HciEvent;
 
@@ -6,16 +6,27 @@ pub trait CommandWithCompleteEvent: HciCommand {
     type ReturnParameters: ReturnParameters;
 }
 
+impl CommandWithCompleteEvent for AnyCommand {
+    type ReturnParameters = ();
+}
+
 pub trait ReturnParameters: Sized {
     fn parse(raw: RawParameters) -> Result<Self, ParseError>;
 }
 
+impl ReturnParameters for () {
+    fn parse(_: RawParameters) -> Result<Self, ParseError> {
+        Ok(())
+    }
+}
+
+impl<C: CommandWithCompleteEvent> CommandReceiptIndicator<C> for CommandComplete<C> {}
+
 #[derive(Debug)]
-pub struct CommandComplete<C: CommandWithCompleteEvent> {
+pub struct CommandComplete<C: CommandWithCompleteEvent = AnyCommand> {
     pub num_hci_command_packets: u8,
     pub command_opcode: Opcode,
     pub return_parameters: C::ReturnParameters,
-    pub qslot: QueueSlot,
 }
 
 impl<C, R> HciEvent for CommandComplete<C>
@@ -44,7 +55,6 @@ where
             num_hci_command_packets: *num_hci_command_packets,
             command_opcode,
             return_parameters: C::ReturnParameters::parse(RawParameters::new(parameters))?,
-            qslot: QueueSlot(()),
         }))
     }
 }

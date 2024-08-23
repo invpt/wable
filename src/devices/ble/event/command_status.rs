@@ -1,10 +1,14 @@
 use core::marker::PhantomData;
 
-use crate::devices::ble::{command::Opcode, EventCode, HciCommand, ParseError, RawHciEvent};
+use crate::devices::ble::{command::{AnyCommand, Opcode}, private::CommandReceiptIndicator, EventCode, HciCommand, ParseError, RawHciEvent};
 
 use super::HciEvent;
 
 pub trait CommandWithStatusEvent: HciCommand {}
+
+impl CommandWithStatusEvent for AnyCommand {}
+
+impl<C: CommandWithStatusEvent> CommandReceiptIndicator<C> for CommandStatus<C> {}
 
 #[derive(Debug)]
 pub struct CommandStatus<C> {

@@ -1,3 +1,5 @@
+use core::num::NonZeroU8;
+
 use super::{event::command_complete::ReturnParameters, ParseError, RawParameters};
 
 pub mod le_set_scan_enable;
@@ -22,9 +24,21 @@ impl Opcode {
     }
 }
 
+pub struct AnyCommand;
+
 pub trait HciCommand {
     fn match_opcode(opcode: Opcode) -> bool;
     fn raw(self) -> RawHciCommand;
+}
+
+impl HciCommand for AnyCommand {
+    fn match_opcode(_opcode: Opcode) -> bool {
+        true
+    }
+
+    fn raw(self) -> RawHciCommand {
+        panic!("AnyCommand cannot be encoded")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,12 +57,22 @@ impl HciCommand for RawHciCommand {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StatusCode(pub u8);
+
+#[derive(Debug, Clone, Copy)]
+pub struct StatusError(pub NonZeroU8);
 
 impl StatusCode {
     pub fn is_successful(self) -> bool {
         self.0 == 0x00
+    }
+
+    pub fn assert(self) -> Result<(), StatusError> {
+        match NonZeroU8::new(self.0) {
+            Some(nz) => Err(StatusError(nz)),
+            None => Ok(())
+        }
     }
 }
 

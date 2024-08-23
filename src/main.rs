@@ -153,92 +153,80 @@ fn main() -> ! {
 
     let (mut ble, qslot) = Ble::new(ble_conn, delay);
 
-    ble.queue(qslot, Reset {}).unwrap();
+    let qlock = ble.queue(qslot, Reset {}).unwrap();
     let qslot = loop {
-        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.receive().unwrap()).unwrap()
+        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.poll().unwrap()).unwrap()
         else {
             continue;
         };
 
-        if !event.return_parameters.status.is_successful() {
-            panic!("Failed to reset")
-        }
+        event.return_parameters.status.assert().unwrap();
 
-        break event.qslot;
+        break qlock.release_with(&event);
     };
 
-    ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
+    let qlock = ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
     let qslot = loop {
         let Some(event) =
-            CommandComplete::<SetEventMask>::match_parse(&ble.receive().unwrap()).unwrap()
+            CommandComplete::<SetEventMask>::match_parse(&ble.poll().unwrap()).unwrap()
         else {
             continue;
         };
 
-        if !event.return_parameters.status.is_successful() {
-            panic!("Failed to reset")
-        }
+        event.return_parameters.status.assert().unwrap();
 
-        break event.qslot;
+        break qlock.release_with(&event);
     };
 
-    ble.queue(
-        qslot,
-        LeSetScanParameters {
-            le_scan_type: 0x01,
-            le_scan_interval: 0x0100,
-            le_scan_window: 0x0010,
-            own_address_type: 0x00,
-            scanning_filter_policy: 0x00,
-        },
-    )
-    .unwrap();
+    let qlock = ble
+        .queue(
+            qslot,
+            LeSetScanParameters {
+                le_scan_type: 0x01,
+                le_scan_interval: 0x0100,
+                le_scan_window: 0x0010,
+                own_address_type: 0x00,
+                scanning_filter_policy: 0x00,
+            },
+        )
+        .unwrap();
     let qslot = loop {
         let Some(event) =
-            CommandComplete::<LeSetScanParameters>::match_parse(&ble.receive().unwrap()).unwrap()
+            CommandComplete::<LeSetScanParameters>::match_parse(&ble.poll().unwrap()).unwrap()
         else {
             continue;
         };
 
-        println!("{event:?}");
+        event.return_parameters.status.assert().unwrap();
 
-        if !event.return_parameters.status.is_successful() {
-            panic!("Failed to set scan parameters")
-        }
-
-        break event.qslot;
+        break qlock.release_with(&event);
     };
 
-    ble.queue(
-        qslot,
-        LeSetScanEnable {
-            le_scan_enable: 0x01,
-            filter_duplicates: 0x00,
-        },
-    )
-    .unwrap();
+    let qlock = ble
+        .queue(
+            qslot,
+            LeSetScanEnable {
+                le_scan_enable: 0x01,
+                filter_duplicates: 0x00,
+            },
+        )
+        .unwrap();
     let _qslot = loop {
         let Some(event) =
-            CommandComplete::<LeSetScanEnable>::match_parse(&ble.receive().unwrap()).unwrap()
+            CommandComplete::<LeSetScanEnable>::match_parse(&ble.poll().unwrap()).unwrap()
         else {
             continue;
         };
 
-        println!("{event:?}");
+        event.return_parameters.status.assert().unwrap();
 
-        if !event.return_parameters.status.is_successful() {
-            panic!("Failed to set scan enable")
-        }
-
-        break event.qslot;
+        break qlock.release_with(&event);
     };
 
     loop {
-        let Some(event) = LeAdvertisingReport::match_parse(&ble.receive().unwrap()).unwrap() else {
+        let Some(event) = LeAdvertisingReport::match_parse(&ble.poll().unwrap()).unwrap() else {
             continue;
         };
-
-        println!("got event");
 
         for item in event.items() {
             let item = item.unwrap();
