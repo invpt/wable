@@ -33,8 +33,7 @@ use esp_wifi::{ble::controller::BleConnector, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
 
-extern crate alloc;
-use core::{cell::RefCell, mem::MaybeUninit};
+use core::cell::RefCell;
 
 use critical_section::Mutex;
 use esp_println::println;
@@ -43,18 +42,6 @@ mod devices {
     pub mod ble;
     pub mod display;
     pub mod vibration_motor;
-}
-
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
-
-fn init_heap() {
-    const HEAP_SIZE: usize = 32 * 1024;
-    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
-
-    unsafe {
-        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
-    }
 }
 
 static BUTTON: Mutex<RefCell<Option<Input<GpioPin<26>>>>> = Mutex::new(RefCell::new(None));
@@ -81,7 +68,7 @@ fn main() -> ! {
     .with_mosi(io.pins.gpio23)
     .with_sck(io.pins.gpio18);
 
-    /*let mut display = Display::new(
+    let mut display = Display::new(
         rtc,
         spi,
         io.pins.gpio5,
@@ -105,7 +92,7 @@ fn main() -> ! {
         )
         .unwrap();
 
-    display.power_off().unwrap();*/
+    display.power_off().unwrap();
 
     let i2c = I2C::new(
         peripherals.I2C0,
@@ -228,6 +215,9 @@ fn main() -> ! {
             continue;
         };
 
+        let time = rtc.get_datetime().unwrap();
+
+        println!("received report at {time:?}");
         for item in event.items() {
             let item = item.unwrap();
 

@@ -28,7 +28,7 @@ pub struct BoundedBytes<const N: usize> {
 
 impl<const N: usize> BoundedBytes<N> {
     pub fn new(data: &[u8]) -> BoundedBytes<N> {
-        assert!(data.len() < N, "data length cannot exceed {}", N - 1);
+        assert!(data.len() <= N, "data length cannot exceed {}", N - 1);
 
         let len = data.len() as u8;
         let mut data_arr = [0; N];
