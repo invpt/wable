@@ -26,6 +26,7 @@ fugit = "0.3.7"
 pcf8563 = { git = "https://github.com/invpt/pcf8563-rs", package = "pcf8563", rev = "efc4e55" }
 wepd = { git = "https://github.com/invpt/wepd", package = "wepd" }
 embedded-graphics = "0.8.1"
+embedded-hal-bus = "0.2.0"
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization

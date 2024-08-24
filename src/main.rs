@@ -14,12 +14,17 @@ use devices::{
     },
     vibration_motor::VibrationMotor,
 };
-use embedded_graphics::{mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyle}, prelude::*, text::Text};
+use embedded_graphics::{
+    mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyle},
+    prelude::*,
+    text::Text,
+};
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
-    gpio::{GpioPin, Input, Io, Level, Pull, Output},
+    gpio::{GpioPin, Input, Io, Level, Output, Pull},
     i2c::I2C,
     peripherals::Peripherals,
     prelude::*,
@@ -31,7 +36,7 @@ use esp_hal::{
 use esp_wifi::{ble::controller::BleConnector, current_millis, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
-use wepd::{Display, Framebuffer};
+use wepd::{Display, DisplayConfiguration, Framebuffer};
 
 use core::cell::RefCell;
 
@@ -58,7 +63,7 @@ fn main() -> ! {
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     io.set_interrupt_handler(handler);
 
-    let spi = Spi::new(
+    let bus = Spi::new(
         peripherals.SPI2,
         HertzU32::Hz(20000000),
         SpiMode::Mode0,
@@ -67,16 +72,15 @@ fn main() -> ! {
     .with_mosi(io.pins.gpio23)
     .with_sck(io.pins.gpio18);
 
-    let mut display = Display::new_on_bus(
+    let mut display = Display::new(DisplayConfiguration {
+        spi: ExclusiveDevice::new(bus, Output::new(io.pins.gpio5, Level::High), delay).unwrap(),
+        dc: Output::new(io.pins.gpio10, Level::High),
+        rst: Output::new(io.pins.gpio9, Level::High),
+        busy: Input::new(io.pins.gpio19, Pull::None),
         delay,
-        spi,
-        Output::new(io.pins.gpio10, Level::High),
-        Output::new(io.pins.gpio5, Level::High),
-        Input::new(io.pins.gpio19, Pull::None),
-        Output::new(io.pins.gpio9, Level::High),
-        || delay.delay(1.millis()),
         current_millis,
-    )
+        wait: || delay.delay(1.millis()),
+    })
     .unwrap();
 
     display.reset().unwrap();
@@ -86,7 +90,9 @@ fn main() -> ! {
     let mut fb = Framebuffer::new();
 
     let style = MonoTextStyle::new(&FONT_9X18_BOLD, wepd::Color::Black);
-    Text::new("Hello world", Point{ x: 5, y: 15 }, style).draw(&mut fb).unwrap();
+    Text::new("Hello world", Point { x: 5, y: 15 }, style)
+        .draw(&mut fb)
+        .unwrap();
     fb.flush(&mut display).unwrap();
 
     display.power_off().unwrap();
