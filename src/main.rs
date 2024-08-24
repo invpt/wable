@@ -14,6 +14,7 @@ use devices::{
     },
     vibration_motor::VibrationMotor,
 };
+use embedded_graphics::{mono_font::{ascii::FONT_9X18_BOLD, MonoTextStyle}, prelude::*, text::Text};
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
@@ -30,7 +31,7 @@ use esp_hal::{
 use esp_wifi::{ble::controller::BleConnector, current_millis, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
-use wepd::Display;
+use wepd::{Display, Framebuffer};
 
 use core::cell::RefCell;
 
@@ -82,9 +83,11 @@ fn main() -> ! {
 
     display.clear_screen(0xFF).unwrap();
 
-    display
-        .draw_image(include_bytes!("../bg.bin"), 0, 0, 200, 200)
-        .unwrap();
+    let mut fb = Framebuffer::new();
+
+    let style = MonoTextStyle::new(&FONT_9X18_BOLD, wepd::Color::Black);
+    Text::new("Hello world", Point{ x: 5, y: 15 }, style).draw(&mut fb).unwrap();
+    fb.flush(&mut display).unwrap();
 
     display.power_off().unwrap();
 
