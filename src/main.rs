@@ -12,26 +12,25 @@ use devices::{
         },
         Ble,
     },
-    display::{Display, Rect, Span},
     vibration_motor::VibrationMotor,
 };
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
-    gpio::{GpioPin, Input, Io},
+    gpio::{GpioPin, Input, Io, Level, Pull, Output},
     i2c::I2C,
     peripherals::Peripherals,
     prelude::*,
     rng::Rng,
-    rtc_cntl::Rtc,
     spi::{master::Spi, SpiMode},
     system::SystemControl,
     timer::{timg::TimerGroup, PeriodicTimer},
 };
-use esp_wifi::{ble::controller::BleConnector, EspWifiInitFor};
+use esp_wifi::{ble::controller::BleConnector, current_millis, EspWifiInitFor};
 use fugit::HertzU32;
 use pcf8563::DateTime;
+use wepd::Display;
 
 use core::cell::RefCell;
 
@@ -40,7 +39,6 @@ use esp_println::println;
 
 mod devices {
     pub mod ble;
-    pub mod display;
     pub mod vibration_motor;
 }
 
@@ -54,7 +52,7 @@ fn main() -> ! {
     let clocks = ClockControl::max(system.clock_control).freeze();
     let delay = Delay::new(&clocks);
 
-    let rtc = Rtc::new(peripherals.LPWR, Some(handler));
+    //let rtc = Rtc::new(peripherals.LPWR, Some(handler));
 
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     io.set_interrupt_handler(handler);
@@ -68,28 +66,24 @@ fn main() -> ! {
     .with_mosi(io.pins.gpio23)
     .with_sck(io.pins.gpio18);
 
-    let mut display = Display::new(
-        rtc,
+    let mut display = Display::new_on_bus(
+        delay,
         spi,
-        io.pins.gpio5,
-        io.pins.gpio10,
-        io.pins.gpio19,
-        io.pins.gpio9,
-        &clocks,
-    );
+        Output::new(io.pins.gpio10, Level::High),
+        Output::new(io.pins.gpio5, Level::High),
+        Input::new(io.pins.gpio19, Pull::None),
+        Output::new(io.pins.gpio9, Level::High),
+        || delay.delay(1.millis()),
+        current_millis,
+    )
+    .unwrap();
 
     display.reset().unwrap();
 
     display.clear_screen(0xFF).unwrap();
 
     display
-        .draw_image(
-            include_bytes!("../bg.bin"),
-            Rect {
-                x: Span { lo: 0, hi: 200 },
-                y: Span { lo: 0, hi: 200 },
-            },
-        )
+        .draw_image(include_bytes!("../bg.bin"), 0, 0, 200, 200)
         .unwrap();
 
     display.power_off().unwrap();

@@ -1007,6 +1007,15 @@ dependencies = [
  "heapless",
  "log",
  "pcf8563",
+ "wepd",
+]
+
+[[package]]
+name = "wepd"
+version = "0.1.0"
+source = "git+https://github.com/invpt/wepd#e469bde211620f0fbcab413ba6e1fa3eb47004f6"
+dependencies = [
+ "embedded-hal",
 ]
 
 [[package]]

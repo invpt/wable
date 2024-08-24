@@ -24,6 +24,7 @@ heapless = { version = "0.8.0", default-features = false }
 critical-section = "1.1.2"
 fugit = "0.3.7"
 pcf8563 = { git = "https://github.com/invpt/pcf8563-rs", package = "pcf8563", rev = "efc4e55" }
+wepd = { git = "https://github.com/invpt/wepd", package = "wepd" }
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization
