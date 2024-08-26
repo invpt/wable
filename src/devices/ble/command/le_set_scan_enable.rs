@@ -1,8 +1,13 @@
-use crate::devices::ble::{event::command_complete::CommandWithCompleteEvent, HciCommand, RawParameters};
+use crate::devices::ble::{
+    data::{
+        opcode::{Ogf, Opcode},
+        status_code::StatusCode,
+        Encode, Encoder, EncoderFull,
+    },
+    event::command_complete::CommandWithCompleteEvent,
+};
 
-use super::{Ogf, Opcode, RawHciCommand, StatusCodeReturnParameters};
-
-const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000C);
+use super::CommandParameters;
 
 #[derive(Debug)]
 pub struct LeSetScanEnable {
@@ -10,22 +15,22 @@ pub struct LeSetScanEnable {
     pub filter_duplicates: u8,
 }
 
-impl HciCommand for LeSetScanEnable {
-    fn match_opcode(opcode: Opcode) -> bool {
-        opcode == OPCODE
-    }
+impl Encode for LeSetScanEnable {
+    fn encode<E>(&self, e: &mut E) -> Result<(), EncoderFull>
+    where
+        E: Encoder + ?Sized,
+    {
+        e.encode(&self.le_scan_enable)?;
+        e.encode(&self.filter_duplicates)?;
 
-    fn raw(self) -> RawHciCommand {
-        RawHciCommand {
-            opcode: OPCODE,
-            parameters: RawParameters::new(&[
-                self.le_scan_enable,
-                self.filter_duplicates,
-            ])
-        }
+        Ok(())
     }
 }
 
+impl CommandParameters for LeSetScanEnable {
+    const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000C);
+}
+
 impl CommandWithCompleteEvent for LeSetScanEnable {
-    type ReturnParameters = StatusCodeReturnParameters;
+    type ReturnParameters = StatusCode;
 }

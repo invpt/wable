@@ -1,8 +1,13 @@
-use crate::devices::ble::{event::command_complete::CommandWithCompleteEvent, HciCommand, RawParameters};
+use crate::devices::ble::{
+    data::{
+        opcode::{Ogf, Opcode},
+        status_code::StatusCode,
+        Encode, Encoder, EncoderFull,
+    },
+    event::command_complete::CommandWithCompleteEvent,
+};
 
-use super::{Ogf, Opcode, RawHciCommand, StatusCodeReturnParameters};
-
-const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000B);
+use super::CommandParameters;
 
 #[derive(Debug)]
 pub struct LeSetScanParameters {
@@ -13,30 +18,25 @@ pub struct LeSetScanParameters {
     pub scanning_filter_policy: u8,
 }
 
-impl HciCommand for LeSetScanParameters {
-    fn match_opcode(opcode: Opcode) -> bool {
-        opcode == OPCODE
-    }
+impl Encode for LeSetScanParameters {
+    fn encode<E>(&self, e: &mut E) -> Result<(), EncoderFull>
+    where
+        E: Encoder + ?Sized,
+    {
+        e.encode(&self.le_scan_type)?;
+        e.encode(&self.le_scan_interval)?;
+        e.encode(&self.le_scan_window)?;
+        e.encode(&self.own_address_type)?;
+        e.encode(&self.scanning_filter_policy)?;
 
-    fn raw(self) -> RawHciCommand {
-        let le_scan_interval = self.le_scan_interval.to_le_bytes();
-        let le_scan_window = self.le_scan_window.to_le_bytes();
-
-        RawHciCommand {
-            opcode: OPCODE,
-            parameters: RawParameters::new(&[
-                self.le_scan_type,
-                le_scan_interval[0],
-                le_scan_interval[1],
-                le_scan_window[0],
-                le_scan_window[1],
-                self.own_address_type,
-                self.scanning_filter_policy,
-            ]),
-        }
+        Ok(())
     }
 }
 
+impl CommandParameters for LeSetScanParameters {
+    const OPCODE: Opcode = Opcode::new(Ogf::LE_CONTROLLER, 0x000B);
+}
+
 impl CommandWithCompleteEvent for LeSetScanParameters {
-    type ReturnParameters = StatusCodeReturnParameters;
+    type ReturnParameters = StatusCode;
 }

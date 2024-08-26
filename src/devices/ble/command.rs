@@ -1,94 +1,59 @@
-use core::num::NonZeroU8;
+use super::data::{opcode::Opcode, Buffer, Encode, Encoder, EncoderFull};
 
-use super::{event::command_complete::ReturnParameters, ParseError, RawParameters};
-
+pub mod le_create_connection;
 pub mod le_set_scan_enable;
 pub mod le_set_scan_parameters;
 pub mod reset;
 pub mod set_event_mask;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ogf(pub u8);
-
-impl Ogf {
-    pub const CONTROLLER_BASEBAND: Ogf = Ogf(0x03);
-    pub const LE_CONTROLLER: Ogf = Ogf(0x08);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Opcode(pub u16);
-
-impl Opcode {
-    pub const fn new(ogf: Ogf, ocf: u16) -> Opcode {
-        Opcode(((ogf.0 as u16) << 10) | ocf)
-    }
-}
-
 pub struct AnyCommand;
 
-pub trait HciCommand {
-    fn match_opcode(opcode: Opcode) -> bool;
-    fn raw(self) -> RawHciCommand;
+pub trait CommandParameters: Encode {
+    const OPCODE: Opcode;
 }
 
-impl HciCommand for AnyCommand {
-    fn match_opcode(_opcode: Opcode) -> bool {
-        true
-    }
-
-    fn raw(self) -> RawHciCommand {
-        panic!("AnyCommand cannot be encoded")
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RawHciCommand {
+pub struct EncodedCommand {
     pub opcode: Opcode,
-    pub parameters: RawParameters,
+    pub parameters: Buffer<255>,
 }
 
-impl HciCommand for RawHciCommand {
+impl EncodedCommand {
+    pub fn encode<C: Encode + HasOpcode>(command: C) -> Result<EncodedCommand, EncoderFull> {
+        let opcode = command.opcode();
+        let mut parameters = Buffer::new();
+        command.encode(&mut parameters)?;
+        Ok(EncodedCommand { opcode, parameters })
+    }
+}
+
+pub trait HasOpcode {
+    fn opcode(&self) -> Opcode;
+}
+
+impl<C: CommandParameters + ?Sized> HasOpcode for C {
+    fn opcode(&self) -> Opcode {
+        C::OPCODE
+    }
+}
+
+impl HasOpcode for EncodedCommand {
+    fn opcode(&self) -> Opcode {
+        self.opcode
+    }
+}
+
+pub trait MatchOpcode {
+    fn match_opcode(opcode: Opcode) -> bool;
+}
+
+impl<C: CommandParameters + ?Sized> MatchOpcode for C {
+    fn match_opcode(opcode: Opcode) -> bool {
+        opcode == Self::OPCODE
+    }
+}
+
+impl MatchOpcode for AnyCommand {
     fn match_opcode(_opcode: Opcode) -> bool {
         true
-    }
-
-    fn raw(self) -> RawHciCommand {
-        self
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StatusCode(pub u8);
-
-#[derive(Debug, Clone, Copy)]
-pub struct StatusError(pub NonZeroU8);
-
-impl StatusCode {
-    pub fn is_successful(self) -> bool {
-        self.0 == 0x00
-    }
-
-    pub fn assert(self) -> Result<(), StatusError> {
-        match NonZeroU8::new(self.0) {
-            Some(nz) => Err(StatusError(nz)),
-            None => Ok(())
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct StatusCodeReturnParameters {
-    pub status: StatusCode,
-}
-
-impl ReturnParameters for StatusCodeReturnParameters {
-    fn parse(raw: RawParameters) -> Result<Self, ParseError> {
-        let &[status] = &*raw else {
-            return Err(ParseError);
-        };
-
-        Ok(StatusCodeReturnParameters {
-            status: StatusCode(status),
-        })
     }
 }

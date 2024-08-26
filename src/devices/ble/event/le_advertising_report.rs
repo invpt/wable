@@ -1,31 +1,31 @@
-use crate::devices::ble::{BoundedBytes, ParseError, RawHciEvent};
+use crate::devices::ble::{
+    data::{Buffer, DecodeError, MaybeDecode, MaybeDecoder},
+    ParseError,
+};
 
-use super::{EventCode, HciEvent};
+use super::{EventParameters, EventCode};
 
 pub struct LeAdvertisingReport {
     num_reports: u8,
-    data: BoundedBytes<253>,
+    data: Buffer<253>,
 }
 
-impl HciEvent for LeAdvertisingReport {
-    fn match_parse(raw: &RawHciEvent) -> Result<Option<Self>, ParseError> {
-        if raw.code != EventCode(0x3E) || raw.parameters.len() < 1 {
-            return Ok(None);
-        }
-
-        let [_subevent_code @ 0x02, rest @ ..] = &*raw.parameters else {
-            return Ok(None);
-        };
-
-        let [num_reports, rest @ ..] = rest else {
-            return Err(ParseError);
-        };
+impl MaybeDecode for LeAdvertisingReport {
+    fn maybe_decode<D>(d: &mut D) -> Result<Option<Self>, DecodeError>
+    where
+        D: MaybeDecoder + ?Sized,
+    {
+        let 0x02u8 = d.decode()? else { return Ok(None) };
 
         Ok(Some(LeAdvertisingReport {
-            num_reports: *num_reports,
-            data: BoundedBytes::new(rest),
+            num_reports: d.decode()?,
+            data: d.decode()?,
         }))
     }
+}
+
+impl EventParameters for LeAdvertisingReport {
+    const EVENT_CODE: EventCode = EventCode(0x3E);
 }
 
 impl LeAdvertisingReport {
@@ -42,7 +42,7 @@ pub struct LeAdvertisingReportItem {
     pub event_type: u8,
     pub address_type: u8,
     pub address: [u8; 6],
-    pub data: BoundedBytes<0x1F>,
+    pub data: Buffer<0x1F>,
     pub rssi: u8,
 }
 
@@ -86,7 +86,7 @@ impl<'a> Iterator for LeAdvertisingReportItems<'a> {
             event_type: *event_type,
             address_type: *address_type,
             address,
-            data: BoundedBytes::new(data),
+            data: Buffer::from(data),
             rssi: *rssi,
         }))
     }

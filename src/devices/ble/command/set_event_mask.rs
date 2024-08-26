@@ -1,26 +1,33 @@
-use crate::devices::ble::{event::command_complete::CommandWithCompleteEvent, BoundedBytes, HciCommand};
+use crate::devices::ble::{
+    data::{
+        opcode::{Ogf, Opcode},
+        status_code::StatusCode,
+        Encode, Encoder, EncoderFull,
+    },
+    event::command_complete::CommandWithCompleteEvent,
+};
 
-use super::{Ogf, Opcode, RawHciCommand, StatusCodeReturnParameters};
-
-const OPCODE: Opcode = Opcode::new(Ogf::CONTROLLER_BASEBAND, 0x0001);
+use super::CommandParameters;
 
 pub struct SetEventMask {
-    pub mask: u64
+    pub mask: u64,
 }
 
-impl HciCommand for SetEventMask {
-    fn match_opcode(opcode: Opcode) -> bool {
-        opcode == OPCODE
-    }
+impl Encode for SetEventMask {
+    fn encode<E>(&self, e: &mut E) -> Result<(), EncoderFull>
+    where
+        E: Encoder + ?Sized,
+    {
+        e.encode(&self.mask)?;
 
-    fn raw(self) -> RawHciCommand {
-        RawHciCommand {
-            opcode: OPCODE,
-            parameters: BoundedBytes::new(&self.mask.to_le_bytes()),
-        }
+        Ok(())
     }
+}
+
+impl CommandParameters for SetEventMask {
+    const OPCODE: Opcode = Opcode::new(Ogf::CONTROLLER_BASEBAND, 0x0001);
 }
 
 impl CommandWithCompleteEvent for SetEventMask {
-    type ReturnParameters = StatusCodeReturnParameters;
+    type ReturnParameters = StatusCode;
 }

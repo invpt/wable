@@ -1,13 +1,19 @@
 use core::marker::PhantomData;
 
-use crate::devices::ble::{command::{AnyCommand, Opcode}, private::CommandReceiptIndicator, EventCode, HciCommand, ParseError, RawHciEvent};
+use crate::devices::ble::{
+    command::{AnyCommand, MatchOpcode},
+    data::{opcode::Opcode, DecodeError, MaybeDecode, MaybeDecoder},
+    private::Internal,
+    CommandReceiptIndicator,
+};
 
-use super::HciEvent;
+use super::{EventCode, EventParameters};
 
-pub trait CommandWithStatusEvent: HciCommand {}
+pub trait CommandWithStatusEvent: MatchOpcode {}
 
 impl CommandWithStatusEvent for AnyCommand {}
 
+impl<C> Internal for CommandStatus<C> {}
 impl<C: CommandWithStatusEvent> CommandReceiptIndicator<C> for CommandStatus<C> {}
 
 #[derive(Debug)]
@@ -18,32 +24,30 @@ pub struct CommandStatus<C> {
     pub command_opcode: Opcode,
 }
 
-impl<C> HciEvent for CommandStatus<C>
+impl<C> MaybeDecode for CommandStatus<C>
 where
     C: CommandWithStatusEvent,
 {
-    fn match_parse(raw: &RawHciEvent) -> Result<Option<Self>, ParseError> {
-        if raw.code != EventCode(0x0F) {
-            return Ok(None);
-        }
-
-        let [status, num_hci_command_packets, command_opcode_0, command_opcode_1] =
-            &*raw.parameters
-        else {
-            return Err(ParseError);
-        };
-
-        let command_opcode = Opcode(u16::from_le_bytes([*command_opcode_0, *command_opcode_1]));
-
+    fn maybe_decode<D>(d: &mut D) -> Result<Option<Self>, DecodeError>
+    where
+        D: MaybeDecoder + ?Sized,
+    {
+        let status = d.decode()?;
+        let num_hci_command_packets = d.decode()?;
+        let command_opcode = d.decode()?;
         if !C::match_opcode(command_opcode) {
             return Ok(None);
         }
 
-        Ok(Some(CommandStatus {
+        Ok(Some(Self {
             _phantom: PhantomData,
-            status: *status,
-            num_hci_command_packets: *num_hci_command_packets,
+            status,
+            num_hci_command_packets,
             command_opcode,
         }))
     }
+}
+
+impl<C: CommandWithStatusEvent> EventParameters for CommandStatus<C> {
+    const EVENT_CODE: EventCode = EventCode(0x0F);
 }

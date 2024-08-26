@@ -7,10 +7,8 @@ use devices::{
             le_set_scan_enable::LeSetScanEnable, le_set_scan_parameters::LeSetScanParameters,
             reset::Reset, set_event_mask::SetEventMask,
         },
-        event::{
-            command_complete::CommandComplete, le_advertising_report::LeAdvertisingReport, HciEvent,
-        },
-        Ble,
+        event::le_advertising_report::LeAdvertisingReport,
+        Ble, PollBehavior,
     },
     vibration_motor::VibrationMotor,
 };
@@ -22,16 +20,7 @@ use embedded_graphics::{
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
-    delay::Delay,
-    gpio::{GpioPin, Input, Io, Level, Output, Pull},
-    i2c::I2C,
-    peripherals::Peripherals,
-    prelude::*,
-    rng::Rng,
-    spi::{master::Spi, SpiMode},
-    system::SystemControl,
-    timer::{timg::TimerGroup, PeriodicTimer},
+    clock::ClockControl, delay::Delay, gpio::{GpioPin, Input, Io, Level, Output, Pull}, i2c::I2C, peripherals::Peripherals, prelude::*, rng::Rng, spi::{master::Spi, SpiMode}, system::SystemControl, timer::{timg::TimerGroup, PeriodicTimer}
 };
 use esp_wifi::{ble::controller::BleConnector, current_millis, EspWifiInitFor};
 use fugit::HertzU32;
@@ -143,34 +132,20 @@ fn main() -> ! {
 
     let (mut ble, qslot) = Ble::new(ble_conn, delay);
 
-    let qlock = ble.queue(qslot, Reset {}).unwrap();
-    let qslot = loop {
-        let Some(event) = CommandComplete::<Reset>::match_parse(&ble.poll().unwrap()).unwrap()
-        else {
-            continue;
-        };
+    let (status, qslot) = ble
+        .run_until_complete(qslot, PollBehavior::Strict, Reset {})
+        .unwrap();
+    status.assert().unwrap();
 
-        event.return_parameters.status.assert().unwrap();
+    let (status, qslot) = ble
+        .run_until_complete(qslot, PollBehavior::Strict, SetEventMask { mask: !0 })
+        .unwrap();
+    status.assert().unwrap();
 
-        break qlock.release_with(&event);
-    };
-
-    let qlock = ble.queue(qslot, SetEventMask { mask: !0 }).unwrap();
-    let qslot = loop {
-        let Some(event) =
-            CommandComplete::<SetEventMask>::match_parse(&ble.poll().unwrap()).unwrap()
-        else {
-            continue;
-        };
-
-        event.return_parameters.status.assert().unwrap();
-
-        break qlock.release_with(&event);
-    };
-
-    let qlock = ble
-        .queue(
+    let (status, qslot) = ble
+        .run_until_complete(
             qslot,
+            PollBehavior::Strict,
             LeSetScanParameters {
                 le_scan_type: 0x01,
                 le_scan_interval: 0x0100,
@@ -180,51 +155,30 @@ fn main() -> ! {
             },
         )
         .unwrap();
-    let qslot = loop {
-        let Some(event) =
-            CommandComplete::<LeSetScanParameters>::match_parse(&ble.poll().unwrap()).unwrap()
-        else {
-            continue;
-        };
+    status.assert().unwrap();
 
-        event.return_parameters.status.assert().unwrap();
-
-        break qlock.release_with(&event);
-    };
-
-    let qlock = ble
-        .queue(
+    let (status, _qslot) = ble
+        .run_until_complete(
             qslot,
+            PollBehavior::Strict,
             LeSetScanEnable {
                 le_scan_enable: 0x01,
                 filter_duplicates: 0x00,
             },
         )
         .unwrap();
-    let _qslot = loop {
-        let Some(event) =
-            CommandComplete::<LeSetScanEnable>::match_parse(&ble.poll().unwrap()).unwrap()
-        else {
-            continue;
-        };
-
-        event.return_parameters.status.assert().unwrap();
-
-        break qlock.release_with(&event);
-    };
+    status.assert().unwrap();
 
     loop {
-        let Some(event) = LeAdvertisingReport::match_parse(&ble.poll().unwrap()).unwrap() else {
-            continue;
-        };
+        if let Some(event) = ble.filter_poll::<LeAdvertisingReport>().unwrap() {
+            let time = rtc.get_datetime().unwrap();
 
-        let time = rtc.get_datetime().unwrap();
+            println!("received report at {time:?}");
+            for item in event.items() {
+                let item = item.unwrap();
 
-        println!("received report at {time:?}");
-        for item in event.items() {
-            let item = item.unwrap();
-
-            println!("{:?}", item);
+                println!("{:?}", item);
+            }
         }
     }
     /*
